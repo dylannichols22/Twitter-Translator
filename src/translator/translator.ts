@@ -51,10 +51,117 @@ IMPORTANT: Return ONLY valid JSON matching this exact structure:
   ]
 }`;
 
-export async function translateThread(
+function extractJson(text: string): string {
+  let jsonText = text.trim();
+  const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    jsonText = jsonMatch[1].trim();
+  }
+  return jsonText;
+}
+
+// Try to extract complete translation objects from partial JSON
+function extractCompleteTranslations(text: string): TranslatedTweet[] {
+  const translations: TranslatedTweet[] = [];
+
+  // Look for complete translation objects in the array
+  // Match objects that have all required fields closed
+  const regex =
+    /\{\s*"id"\s*:\s*"[^"]*"\s*,\s*"naturalTranslation"\s*:\s*"[^"]*"\s*,\s*"segments"\s*:\s*\[[\s\S]*?\]\s*,\s*"notes"\s*:\s*\[[\s\S]*?\]\s*\}/g;
+
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    try {
+      const obj = JSON.parse(match[0]);
+      if (obj.id && obj.naturalTranslation && obj.segments && obj.notes) {
+        translations.push(obj);
+      }
+    } catch {
+      // Partial object, skip
+    }
+  }
+
+  return translations;
+}
+
+export interface StreamCallbacks {
+  onTranslation: (translation: TranslatedTweet) => void;
+  onComplete: (usage: UsageStats) => void;
+  onError: (error: Error) => void;
+}
+
+export async function translateThreadStreaming(
   tweets: Tweet[],
-  apiKey: string
-): Promise<TranslationResult> {
+  apiKey: string,
+  callbacks: StreamCallbacks
+): Promise<void> {
+  if (!apiKey) {
+    callbacks.onError(new Error('API key is required'));
+    return;
+  }
+
+  if (tweets.length === 0) {
+    callbacks.onError(new Error('No tweets to translate'));
+    return;
+  }
+
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+
+  const tweetsForTranslation = tweets.map((t) => ({
+    id: t.id,
+    text: t.text,
+    author: t.author,
+  }));
+
+  const userPrompt = `Translate these Chinese tweets:
+
+${JSON.stringify(tweetsForTranslation, null, 2)}
+
+Remember to:
+- Provide natural, fluent English translations
+- Break down each text into meaningful segments
+- Use pinyin with tone marks (diacritics)
+- Include helpful notes for language learners`;
+
+  try {
+    const stream = client.messages.stream({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    let fullText = '';
+    const seenIds = new Set<string>();
+
+    stream.on('text', (text) => {
+      fullText += text;
+
+      // Try to extract complete translations from accumulated text
+      const jsonText = extractJson(fullText);
+      const translations = extractCompleteTranslations(jsonText);
+
+      for (const translation of translations) {
+        if (!seenIds.has(translation.id)) {
+          seenIds.add(translation.id);
+          callbacks.onTranslation(translation);
+        }
+      }
+    });
+
+    const finalMessage = await stream.finalMessage();
+
+    callbacks.onComplete({
+      inputTokens: finalMessage.usage.input_tokens,
+      outputTokens: finalMessage.usage.output_tokens,
+    });
+  } catch (error) {
+    callbacks.onError(error instanceof Error ? error : new Error('Translation failed'));
+  }
+}
+
+// Keep the non-streaming version for compatibility
+export async function translateThread(tweets: Tweet[], apiKey: string): Promise<TranslationResult> {
   if (!apiKey) {
     throw new Error('API key is required');
   }
@@ -93,14 +200,7 @@ Remember to:
     throw new Error('No text response from API');
   }
 
-  // Extract JSON from response - Claude often wraps it in markdown code blocks
-  let jsonText = textContent.text.trim();
-
-  // Remove markdown code blocks if present
-  const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (jsonMatch) {
-    jsonText = jsonMatch[1].trim();
-  }
+  const jsonText = extractJson(textContent.text);
 
   let parsed: ApiResponse;
   try {

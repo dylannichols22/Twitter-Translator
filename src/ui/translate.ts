@@ -1,11 +1,14 @@
 import { MESSAGE_TYPES } from '../messages';
-import { translateThread } from '../translator';
-import type { TranslatedTweet, Segment, TranslationResult } from '../translator';
+import { translateThreadStreaming } from '../translator';
+import type { TranslatedTweet, Segment, TranslationResult, UsageStats } from '../translator';
 import type { Tweet } from '../scraper';
 import { estimateCost, calculateCost } from '../cost';
 import { formatCost } from '../popup/popup';
 
-export function renderSegmentTable(segments: Segment[]): HTMLTableElement {
+export function renderSegmentTable(segments: Segment[]): HTMLDivElement {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'segment-table-wrapper';
+
   const table = document.createElement('table');
   table.className = 'segment-table';
 
@@ -33,7 +36,8 @@ export function renderSegmentTable(segments: Segment[]): HTMLTableElement {
     cell.textContent = seg.gloss;
   });
 
-  return table;
+  wrapper.appendChild(table);
+  return wrapper;
 }
 
 export function renderNotes(notes: string[]): HTMLDivElement {
@@ -127,6 +131,7 @@ export class TranslateViewController {
   private estimatedCostEl: HTMLElement | null;
   private tweets: Tweet[] = [];
   private sourceUrl = '';
+  private translations: TranslatedTweet[] = [];
 
   constructor() {
     this.tweetsContainer = document.getElementById('tweets-container');
@@ -177,6 +182,16 @@ export class TranslateViewController {
     this.estimatedCostEl.textContent = `Estimated cost: ${formatCost(estimate.estimatedCost)}`;
   }
 
+  private renderSingleTweet(translation: TranslatedTweet): void {
+    if (!this.tweetsContainer) return;
+
+    const tweet = this.tweets.find((t) => t.id === translation.id);
+    if (tweet) {
+      const element = renderTweet(tweet, translation);
+      this.tweetsContainer.appendChild(element);
+    }
+  }
+
   async translate(): Promise<void> {
     if (this.tweets.length === 0) {
       this.showError('No tweets to translate');
@@ -207,34 +222,56 @@ export class TranslateViewController {
     this.showLoading(true);
     this.showEstimatedCost();
 
-    try {
-      const result = await translateThread(this.tweets, settings.apiKey);
-
-      // Record usage
-      await browser.runtime.sendMessage({
-        type: MESSAGE_TYPES.RECORD_USAGE,
-        data: {
-          inputTokens: result.usage.inputTokens,
-          outputTokens: result.usage.outputTokens,
-        },
-      });
-
-      // Cache translation
-      await browser.runtime.sendMessage({
-        type: MESSAGE_TYPES.CACHE_TRANSLATION,
-        data: {
-          url: this.sourceUrl,
-          translation: result,
-        },
-      });
-
-      this.renderTranslations(result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Translation failed';
-      this.showError(message);
-    } finally {
-      this.showLoading(false);
+    // Clear container for streaming results
+    if (this.tweetsContainer) {
+      this.tweetsContainer.innerHTML = '';
     }
+
+    this.translations = [];
+
+    await translateThreadStreaming(this.tweets, settings.apiKey, {
+      onTranslation: (translation) => {
+        this.translations.push(translation);
+        this.renderSingleTweet(translation);
+        // Hide loading after first result
+        this.showLoading(false);
+      },
+      onComplete: async (usage) => {
+        this.showLoading(false);
+
+        // Update cost display
+        if (this.estimatedCostEl) {
+          const actualCost = calculateCost(usage.inputTokens, usage.outputTokens);
+          this.estimatedCostEl.textContent = `Translation cost: ${formatCost(actualCost)}`;
+        }
+
+        // Record usage
+        await browser.runtime.sendMessage({
+          type: MESSAGE_TYPES.RECORD_USAGE,
+          data: {
+            inputTokens: usage.inputTokens,
+            outputTokens: usage.outputTokens,
+          },
+        });
+
+        // Cache translation
+        const result: TranslationResult = {
+          translations: this.translations,
+          usage,
+        };
+        await browser.runtime.sendMessage({
+          type: MESSAGE_TYPES.CACHE_TRANSLATION,
+          data: {
+            url: this.sourceUrl,
+            translation: result,
+          },
+        });
+      },
+      onError: (error) => {
+        this.showLoading(false);
+        this.showError(error.message);
+      },
+    });
   }
 
   private renderTranslations(result: TranslationResult): void {

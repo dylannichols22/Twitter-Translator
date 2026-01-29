@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twitter Chinese Translator",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "Translate Chinese Twitter content with AI-powered breakdown",
   "permissions": [
     "activeTab",
