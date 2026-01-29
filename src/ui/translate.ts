@@ -89,7 +89,9 @@ export function renderTweet(
 ): HTMLElement {
   const article = document.createElement('article');
   const inlineClass = tweet.inlineReply ? 'inline-reply' : '';
-  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'} ${inlineClass}`.trim();
+  const hasRepliesClass = tweet.hasReplies ? 'has-replies' : '';
+  const isReplyClass = !tweet.isMainPost ? 'is-reply' : '';
+  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'} ${inlineClass} ${hasRepliesClass} ${isReplyClass}`.trim().replace(/\s+/g, ' ');
   article.dataset.tweetId = tweet.id;
 
   // Header (clickable to expand)

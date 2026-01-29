@@ -206,6 +206,29 @@ describe('Translation View', () => {
       header?.dispatchEvent(new Event('click'));
       expect(element.classList.contains('expanded')).toBe(false);
     });
+
+    it('adds has-replies class to main post with replies', () => {
+      const mainWithReplies = { ...mockTweet, isMainPost: true, hasReplies: true };
+      const element = renderTweet(mainWithReplies, mockTranslation);
+      expect(element.classList.contains('has-replies')).toBe(true);
+    });
+
+    it('does not add has-replies class when hasReplies is false', () => {
+      const mainNoReplies = { ...mockTweet, isMainPost: true, hasReplies: false };
+      const element = renderTweet(mainNoReplies, mockTranslation);
+      expect(element.classList.contains('has-replies')).toBe(false);
+    });
+
+    it('adds is-reply class to reply tweets', () => {
+      const replyTweet = { ...mockTweet, isMainPost: false };
+      const element = renderTweet(replyTweet, mockTranslation);
+      expect(element.classList.contains('is-reply')).toBe(true);
+    });
+
+    it('does not add is-reply class to main post', () => {
+      const element = renderTweet(mockTweet, mockTranslation);
+      expect(element.classList.contains('is-reply')).toBe(false);
+    });
   });
 
   describe('TranslateViewController', () => {

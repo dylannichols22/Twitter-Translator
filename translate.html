@@ -535,6 +535,40 @@
         transform: translateY(20px);
       }
     }
+
+    /* Reply Thread Connectors */
+    .tweet-card.has-replies {
+      position: relative;
+    }
+
+    .tweet-card.has-replies::after {
+      content: '';
+      position: absolute;
+      left: 36px;
+      top: 68px;
+      bottom: 0;
+      width: 2px;
+      background: var(--border);
+    }
+
+    .tweet-card.is-reply {
+      position: relative;
+    }
+
+    .tweet-card.is-reply::before {
+      content: '';
+      position: absolute;
+      left: 36px;
+      top: 0;
+      height: 16px;
+      width: 2px;
+      background: var(--border);
+    }
+
+    .tweet-card.inline-reply::before {
+      left: 8px;
+      height: 28px;
+    }
   </style>
 </head>
 <body>
