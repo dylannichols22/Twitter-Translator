@@ -1,6 +1,6 @@
 import { MESSAGE_TYPES } from '../messages';
-import { translateThreadStreaming } from '../translator';
-import type { TranslatedTweet, Segment, TranslationResult, UsageStats } from '../translator';
+import { translateQuickStreaming, getBreakdown } from '../translator';
+import type { QuickTranslation, Segment, Breakdown, UsageStats } from '../translator';
 import type { Tweet } from '../scraper';
 import { estimateCost, calculateCost } from '../cost';
 import { formatCost } from '../popup/popup';
@@ -67,61 +67,18 @@ export function renderNotes(notes: string[]): HTMLDivElement {
   return container;
 }
 
-export function renderTweet(tweet: Tweet, translation: TranslatedTweet): HTMLElement {
-  const article = document.createElement('article');
-  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'}`;
+function renderBreakdownContent(breakdown: Breakdown): DocumentFragment {
+  const fragment = document.createDocumentFragment();
 
-  // Header (clickable to expand)
-  const header = document.createElement('div');
-  header.className = 'tweet-header';
-
-  const author = document.createElement('span');
-  author.className = 'tweet-author';
-  author.textContent = tweet.author || 'Unknown';
-  header.appendChild(author);
-
-  const timestamp = document.createElement('span');
-  timestamp.className = 'tweet-timestamp';
-  if (tweet.timestamp) {
-    timestamp.textContent = new Date(tweet.timestamp).toLocaleString();
-  }
-  header.appendChild(timestamp);
-
-  article.appendChild(header);
-
-  // Translation
-  const translationEl = document.createElement('div');
-  translationEl.className = 'tweet-translation';
-  translationEl.textContent = translation.naturalTranslation;
-  article.appendChild(translationEl);
-
-  // Original text
-  const original = document.createElement('div');
-  original.className = 'tweet-original';
-  original.textContent = tweet.text;
-  article.appendChild(original);
-
-  // Expandable breakdown
-  const breakdown = document.createElement('div');
-  breakdown.className = 'tweet-breakdown hidden';
-
-  // Split segments into chunks of max 6 for readability
-  const chunkSize = 6;
-  for (let i = 0; i < translation.segments.length; i += chunkSize) {
-    const chunk = translation.segments.slice(i, i + chunkSize);
-    breakdown.appendChild(renderSegmentTable(chunk));
+  // Split segments into chunks of max 8 for readability
+  const chunkSize = 8;
+  for (let i = 0; i < breakdown.segments.length; i += chunkSize) {
+    const chunk = breakdown.segments.slice(i, i + chunkSize);
+    fragment.appendChild(renderSegmentTable(chunk));
   }
 
-  breakdown.appendChild(renderNotes(translation.notes));
-  article.appendChild(breakdown);
-
-  // Click to expand/collapse
-  header.addEventListener('click', () => {
-    breakdown.classList.toggle('hidden');
-    article.classList.toggle('expanded');
-  });
-
-  return article;
+  fragment.appendChild(renderNotes(breakdown.notes));
+  return fragment;
 }
 
 export class TranslateViewController {
@@ -131,7 +88,12 @@ export class TranslateViewController {
   private estimatedCostEl: HTMLElement | null;
   private tweets: Tweet[] = [];
   private sourceUrl = '';
-  private translations: TranslatedTweet[] = [];
+  private apiKey = '';
+  private totalUsage: UsageStats = { inputTokens: 0, outputTokens: 0 };
+
+  // Track which breakdowns have been loaded
+  private breakdownCache: Map<string, Breakdown> = new Map();
+  private currentlyExpanded: HTMLElement | null = null;
 
   constructor() {
     this.tweetsContainer = document.getElementById('tweets-container');
@@ -182,30 +144,127 @@ export class TranslateViewController {
     this.estimatedCostEl.textContent = `Estimated cost: ${formatCost(estimate.estimatedCost)}`;
   }
 
-  private renderSingleTweet(translation: TranslatedTweet): void {
-    if (!this.tweetsContainer) return;
+  private updateCostDisplay(): void {
+    if (this.estimatedCostEl) {
+      const actualCost = calculateCost(this.totalUsage.inputTokens, this.totalUsage.outputTokens);
+      this.estimatedCostEl.textContent = `Translation cost: ${formatCost(actualCost)}`;
+    }
+  }
 
-    const tweet = this.tweets.find((t) => t.id === translation.id);
-    if (tweet) {
-      const element = renderTweet(tweet, translation);
-      this.tweetsContainer.appendChild(element);
+  private renderQuickTweet(tweet: Tweet, translation: QuickTranslation): HTMLElement {
+    const article = document.createElement('article');
+    article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'}`;
+    article.dataset.tweetId = tweet.id;
+
+    // Header (clickable to expand)
+    const header = document.createElement('div');
+    header.className = 'tweet-header';
+
+    const author = document.createElement('span');
+    author.className = 'tweet-author';
+    author.textContent = tweet.author || 'Unknown';
+    header.appendChild(author);
+
+    const timestamp = document.createElement('span');
+    timestamp.className = 'tweet-timestamp';
+    if (tweet.timestamp) {
+      timestamp.textContent = new Date(tweet.timestamp).toLocaleString();
+    }
+    header.appendChild(timestamp);
+
+    article.appendChild(header);
+
+    // Translation
+    const translationEl = document.createElement('div');
+    translationEl.className = 'tweet-translation';
+    translationEl.textContent = translation.naturalTranslation;
+    article.appendChild(translationEl);
+
+    // Original text
+    const original = document.createElement('div');
+    original.className = 'tweet-original';
+    original.textContent = tweet.text;
+    article.appendChild(original);
+
+    // Breakdown container (initially empty, loaded on demand)
+    const breakdown = document.createElement('div');
+    breakdown.className = 'tweet-breakdown hidden';
+    article.appendChild(breakdown);
+
+    // Click header to expand/collapse and load breakdown
+    header.addEventListener('click', () => this.toggleBreakdown(article, tweet, breakdown));
+
+    return article;
+  }
+
+  private async toggleBreakdown(article: HTMLElement, tweet: Tweet, breakdownEl: HTMLElement): Promise<void> {
+    const isExpanding = breakdownEl.classList.contains('hidden');
+
+    // Accordion: collapse currently expanded card if different
+    if (isExpanding && this.currentlyExpanded && this.currentlyExpanded !== article) {
+      const prevBreakdown = this.currentlyExpanded.querySelector('.tweet-breakdown');
+      if (prevBreakdown) {
+        prevBreakdown.classList.add('hidden');
+        this.currentlyExpanded.classList.remove('expanded');
+      }
+    }
+
+    if (isExpanding) {
+      // Check if breakdown already loaded
+      if (!this.breakdownCache.has(tweet.id)) {
+        // Show loading state
+        breakdownEl.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
+        breakdownEl.classList.remove('hidden');
+        article.classList.add('expanded');
+
+        try {
+          const result = await getBreakdown(tweet.text, this.apiKey);
+
+          // Update usage stats
+          this.totalUsage.inputTokens += result.usage.inputTokens;
+          this.totalUsage.outputTokens += result.usage.outputTokens;
+          this.updateCostDisplay();
+
+          // Record additional usage
+          await browser.runtime.sendMessage({
+            type: MESSAGE_TYPES.RECORD_USAGE,
+            data: {
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+            },
+          });
+
+          // Cache the breakdown
+          this.breakdownCache.set(tweet.id, result.breakdown);
+
+          // Render breakdown
+          breakdownEl.innerHTML = '';
+          breakdownEl.appendChild(renderBreakdownContent(result.breakdown));
+        } catch (error) {
+          breakdownEl.innerHTML = `<div class="breakdown-error">Failed to load breakdown: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
+        }
+      } else {
+        // Use cached breakdown
+        const cached = this.breakdownCache.get(tweet.id)!;
+        if (breakdownEl.children.length === 0) {
+          breakdownEl.appendChild(renderBreakdownContent(cached));
+        }
+        breakdownEl.classList.remove('hidden');
+        article.classList.add('expanded');
+      }
+
+      this.currentlyExpanded = article;
+    } else {
+      // Collapse
+      breakdownEl.classList.add('hidden');
+      article.classList.remove('expanded');
+      this.currentlyExpanded = null;
     }
   }
 
   async translate(): Promise<void> {
     if (this.tweets.length === 0) {
       this.showError('No tweets to translate');
-      return;
-    }
-
-    // Check for cached translation
-    const cached = await browser.runtime.sendMessage({
-      type: MESSAGE_TYPES.GET_CACHED_TRANSLATION,
-      data: this.sourceUrl,
-    });
-
-    if (cached) {
-      this.renderTranslations(cached);
       return;
     }
 
@@ -219,6 +278,8 @@ export class TranslateViewController {
       return;
     }
 
+    this.apiKey = settings.apiKey;
+
     this.showLoading(true);
     this.showEstimatedCost();
 
@@ -227,25 +288,24 @@ export class TranslateViewController {
       this.tweetsContainer.innerHTML = '';
     }
 
-    this.translations = [];
+    this.totalUsage = { inputTokens: 0, outputTokens: 0 };
 
-    await translateThreadStreaming(this.tweets, settings.apiKey, {
+    await translateQuickStreaming(this.tweets, this.apiKey, {
       onTranslation: (translation) => {
-        this.translations.push(translation);
-        this.renderSingleTweet(translation);
+        const tweet = this.tweets.find((t) => t.id === translation.id);
+        if (tweet && this.tweetsContainer) {
+          const element = this.renderQuickTweet(tweet, translation);
+          this.tweetsContainer.appendChild(element);
+        }
         // Hide loading after first result
         this.showLoading(false);
       },
       onComplete: async (usage) => {
         this.showLoading(false);
+        this.totalUsage = usage;
+        this.updateCostDisplay();
 
-        // Update cost display
-        if (this.estimatedCostEl) {
-          const actualCost = calculateCost(usage.inputTokens, usage.outputTokens);
-          this.estimatedCostEl.textContent = `Translation cost: ${formatCost(actualCost)}`;
-        }
-
-        // Record usage
+        // Record initial translation usage
         await browser.runtime.sendMessage({
           type: MESSAGE_TYPES.RECORD_USAGE,
           data: {
@@ -253,44 +313,11 @@ export class TranslateViewController {
             outputTokens: usage.outputTokens,
           },
         });
-
-        // Cache translation
-        const result: TranslationResult = {
-          translations: this.translations,
-          usage,
-        };
-        await browser.runtime.sendMessage({
-          type: MESSAGE_TYPES.CACHE_TRANSLATION,
-          data: {
-            url: this.sourceUrl,
-            translation: result,
-          },
-        });
       },
       onError: (error) => {
         this.showLoading(false);
         this.showError(error.message);
       },
-    });
-  }
-
-  private renderTranslations(result: TranslationResult): void {
-    if (!this.tweetsContainer) return;
-
-    this.tweetsContainer.innerHTML = '';
-
-    // Show actual cost
-    if (this.estimatedCostEl) {
-      const actualCost = calculateCost(result.usage.inputTokens, result.usage.outputTokens);
-      this.estimatedCostEl.textContent = `Translation cost: ${formatCost(actualCost)}`;
-    }
-
-    this.tweets.forEach((tweet) => {
-      const translation = result.translations.find((t) => t.id === tweet.id);
-      if (translation) {
-        const element = renderTweet(tweet, translation);
-        this.tweetsContainer?.appendChild(element);
-      }
     });
   }
 }
