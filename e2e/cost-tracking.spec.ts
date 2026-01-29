@@ -78,22 +78,22 @@ test.describe('Cost Tracking', () => {
     expect(result.success, result.message).toBe(true);
   });
 
-  test('cost calculation uses Claude Sonnet pricing', async () => {
+  test('cost calculation uses Claude Haiku 4.5 pricing', async () => {
     const result = await runExtensionTest(
       profileDir,
       'https://x.com/',
       45000,
       (text) => {
         if (text.includes('SMOKE_OK')) {
-          // cost.ts CLAUDE_PRICING:
-          // inputPerMillion: 3,  // $3 per 1M input tokens
-          // outputPerMillion: 15 // $15 per 1M output tokens
+          // cost.ts CLAUDE_PRICING (Haiku 4.5):
+          // inputPerMillion: 1,  // $1 per 1M input tokens
+          // outputPerMillion: 5 // $5 per 1M output tokens
           //
           // calculateCost():
           // const inputCost = (inputTokens / 1_000_000) * CLAUDE_PRICING.inputPerMillion;
           // const outputCost = (outputTokens / 1_000_000) * CLAUDE_PRICING.outputPerMillion;
           // return inputCost + outputCost;
-          return { matched: true, message: 'Cost uses Claude Sonnet pricing: $3/1M input, $15/1M output' };
+          return { matched: true, message: 'Cost uses Claude Haiku 4.5 pricing: $1/1M input, $5/1M output' };
         }
         return null;
       }

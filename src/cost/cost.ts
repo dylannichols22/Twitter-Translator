@@ -1,7 +1,7 @@
-// Claude Sonnet pricing (as of 2024)
+// Claude Haiku 4.5 pricing (as of 2025)
 export const CLAUDE_PRICING = {
-  inputPerMillion: 3, // $3 per 1M input tokens
-  outputPerMillion: 15, // $15 per 1M output tokens
+  inputPerMillion: 1, // $1 per 1M input tokens
+  outputPerMillion: 5, // $5 per 1M output tokens
 };
 
 // Rough estimate: Chinese characters tend to be ~1.5-2 tokens each

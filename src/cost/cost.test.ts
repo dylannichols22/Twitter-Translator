@@ -10,7 +10,7 @@ describe('Cost Module', () => {
   describe('calculateCost', () => {
     it('calculates cost based on input and output tokens', () => {
       const cost = calculateCost(1000, 500);
-      // Claude Sonnet pricing: $3/1M input, $15/1M output
+      // Claude Haiku 4.5 pricing: $1/1M input, $5/1M output
       const expectedInputCost = (1000 / 1_000_000) * CLAUDE_PRICING.inputPerMillion;
       const expectedOutputCost = (500 / 1_000_000) * CLAUDE_PRICING.outputPerMillion;
       expect(cost).toBeCloseTo(expectedInputCost + expectedOutputCost, 6);

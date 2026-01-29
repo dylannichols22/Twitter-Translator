@@ -121,6 +121,7 @@
       font-size: 16px;
       margin-bottom: 8px;
       color: #0f1419;
+      white-space: pre-wrap;
     }
 
     .tweet-original {
@@ -128,16 +129,20 @@
       color: #536471;
       padding-top: 8px;
       border-top: 1px dashed #eff3f4;
+      white-space: pre-wrap;
     }
 
     .tweet-breakdown {
       margin-top: 16px;
-      padding-top: 16px;
-      border-top: 1px solid #eff3f4;
-      margin-left: -16px;
-      margin-right: -16px;
-      padding-left: 16px;
-      padding-right: 16px;
+      padding: 16px 20px;
+      background: #fafbfc;
+      border-radius: 8px;
+      /* Break out of card to be wider */
+      position: relative;
+      left: 50%;
+      transform: translateX(-50%);
+      width: calc(100vw - 40px);
+      max-width: 900px;
     }
 
     .breakdown-loading,
@@ -152,16 +157,11 @@
       color: #e65100;
       background: #fff4e5;
       border-radius: 8px;
-      margin: 0 16px;
     }
 
     .segment-table-wrapper {
       overflow-x: auto;
       margin-bottom: 16px;
-      margin-left: -16px;
-      margin-right: -16px;
-      padding-left: 16px;
-      padding-right: 16px;
     }
 
     .segment-table {
