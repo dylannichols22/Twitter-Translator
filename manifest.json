@@ -14,7 +14,7 @@
     "https://api.anthropic.com/*"
   ],
   "background": {
-    "scripts": ["src/background.ts"],
+    "scripts": ["background.js"],
     "type": "module"
   },
   "action": {
@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "matches": ["https://twitter.com/*", "https://x.com/*"],
-      "js": ["src/content.ts"]
+      "js": ["content.js"]
     }
   ],
   "browser_specific_settings": {
