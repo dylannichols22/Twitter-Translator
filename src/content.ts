@@ -1,5 +1,5 @@
 import { scrapeTweets, Tweet } from './scraper';
-import { MESSAGE_TYPES, Message } from './background';
+import { MESSAGE_TYPES, Message } from './messages';
 
 interface ScrapeResponse {
   success: boolean;
@@ -100,4 +100,10 @@ export class ContentScriptHandler {
 // Initialize content script when loaded
 if (typeof browser !== 'undefined' && browser.runtime) {
   new ContentScriptHandler();
+  // Add DOM marker for e2e testing verification
+  document.documentElement.dataset.twitterTranslatorLoaded = 'true';
+  // Smoke test signal - notify background script which has chrome privileges for dump()
+  browser.runtime.sendMessage({ type: MESSAGE_TYPES.SMOKE_PING }).catch(() => {
+    // Ignore errors - this is just for smoke testing
+  });
 }

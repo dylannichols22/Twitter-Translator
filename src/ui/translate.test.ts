@@ -1,4 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../translator', () => ({
+  translateThread: vi.fn(),
+}));
+
+import { translateThread } from '../translator';
 import {
   renderTweet,
   renderSegmentTable,
@@ -164,6 +170,12 @@ describe('Translation View', () => {
         <div id="error-message"></div>
         <div id="estimated-cost"></div>
       `;
+
+      Object.defineProperty(window, 'location', {
+        value: { search: '' },
+        writable: true,
+        configurable: true,
+      });
     });
 
     it('parses URL parameters for tweet data', () => {
@@ -206,6 +218,162 @@ describe('Translation View', () => {
 
       const error = document.getElementById('error-message');
       expect(error?.textContent).toContain('Translation failed');
+    });
+
+    it('shows estimated cost for current tweets', () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: '你好', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      const controller = new TranslateViewController();
+      controller.showEstimatedCost();
+
+      const estimated = document.getElementById('estimated-cost');
+      expect(estimated?.textContent).toContain('Estimated cost:');
+    });
+
+    it('shows error when API key is missing', async () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: '你好', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        if (message.type === 'GET_SETTINGS') return { apiKey: '' };
+        return null;
+      });
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      expect(translateThread).not.toHaveBeenCalled();
+      const error = document.getElementById('error-message');
+      expect(error?.textContent).toContain('API key');
+    });
+
+    it('renders cached translation without calling API', async () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: '你好', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      const cachedResult = {
+        translations: [
+          { id: '1', naturalTranslation: 'Hello', segments: [], notes: [] },
+        ],
+        usage: { inputTokens: 10, outputTokens: 20 },
+      };
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return cachedResult;
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key' };
+        return null;
+      });
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      expect(translateThread).not.toHaveBeenCalled();
+      const tweetsContainer = document.getElementById('tweets-container');
+      expect(tweetsContainer?.textContent).toContain('Hello');
+    });
+
+    it('records usage and caches translation on success', async () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: '你好', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      const result = {
+        translations: [
+          { id: '1', naturalTranslation: 'Hello', segments: [], notes: [] },
+        ],
+        usage: { inputTokens: 10, outputTokens: 20 },
+      };
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key' };
+        return { success: true };
+      });
+
+      vi.mocked(translateThread).mockResolvedValue(result);
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      expect(translateThread).toHaveBeenCalled();
+      expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
+        type: 'RECORD_USAGE',
+        data: { inputTokens: 10, outputTokens: 20 },
+      });
+      expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
+        type: 'CACHE_TRANSLATION',
+        data: {
+          url: 'https://twitter.com/user/status/1',
+          translation: result,
+        },
+      });
+    });
+
+    it('shows actual cost after translation completes', async () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: 'test', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      const result = {
+        translations: [
+          { id: '1', naturalTranslation: 'Hello', segments: [], notes: [] },
+        ],
+        usage: { inputTokens: 10, outputTokens: 20 },
+      };
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key' };
+        return { success: true };
+      });
+
+      vi.mocked(translateThread).mockResolvedValue(result);
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      const estimated = document.getElementById('estimated-cost');
+      expect(estimated?.textContent).toContain('Translation cost:');
     });
   });
 });

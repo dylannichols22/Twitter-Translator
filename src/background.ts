@@ -1,26 +1,12 @@
 import { StorageManager } from './storage';
 import { CostTracker, calculateCost } from './cost';
 import { translationCache } from './cache';
+import { MESSAGE_TYPES, Message } from './messages';
 
 export const CONTEXT_MENU_ID = 'translate-chinese-content';
 
-export const MESSAGE_TYPES = {
-  SCRAPE_PAGE: 'SCRAPE_PAGE',
-  OPEN_TRANSLATE_PAGE: 'OPEN_TRANSLATE_PAGE',
-  GET_SETTINGS: 'GET_SETTINGS',
-  SAVE_SETTINGS: 'SAVE_SETTINGS',
-  GET_COST_STATS: 'GET_COST_STATS',
-  RECORD_USAGE: 'RECORD_USAGE',
-  GET_CACHED_TRANSLATION: 'GET_CACHED_TRANSLATION',
-  CACHE_TRANSLATION: 'CACHE_TRANSLATION',
-} as const;
-
-export type MessageType = (typeof MESSAGE_TYPES)[keyof typeof MESSAGE_TYPES];
-
-export interface Message {
-  type: MessageType;
-  data?: unknown;
-}
+export { MESSAGE_TYPES };
+export type { Message };
 
 const storage = new StorageManager();
 let costTracker: CostTracker;
@@ -141,6 +127,12 @@ export async function handleMessage(
       return { success: true };
     }
 
+    case MESSAGE_TYPES.SMOKE_PING: {
+      // Log for smoke test - web-ext captures console output
+      console.log('SMOKE_OK');
+      return { success: true };
+    }
+
     default:
       return undefined;
   }
@@ -155,6 +147,7 @@ export function initializeExtension(): void {
 
   browser.contextMenus.onClicked.addListener(handleContextMenuClick);
   browser.runtime.onMessage.addListener(handleMessage);
+
 }
 
 // Auto-initialize when loaded in browser context (not tests)

@@ -63,7 +63,7 @@ export async function translateThread(
     throw new Error('No tweets to translate');
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
   const tweetsForTranslation = tweets.map((t) => ({
     id: t.id,
@@ -82,7 +82,7 @@ Remember to:
 - Include helpful notes for language learners`;
 
   const response = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-haiku-4-5-20251001',
     max_tokens: 4096,
     system: SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userPrompt }],
@@ -93,7 +93,21 @@ Remember to:
     throw new Error('No text response from API');
   }
 
-  const parsed: ApiResponse = JSON.parse(textContent.text);
+  // Extract JSON from response - Claude often wraps it in markdown code blocks
+  let jsonText = textContent.text.trim();
+
+  // Remove markdown code blocks if present
+  const jsonMatch = jsonText.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    jsonText = jsonMatch[1].trim();
+  }
+
+  let parsed: ApiResponse;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new Error(`Failed to parse API response as JSON. Response was: ${jsonText.slice(0, 500)}`);
+  }
 
   return {
     translations: parsed.translations,

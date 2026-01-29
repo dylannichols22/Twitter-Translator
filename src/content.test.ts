@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleMessage, ContentScriptHandler } from './content';
-import { MESSAGE_TYPES, Message } from './background';
+import { MESSAGE_TYPES, Message } from './messages';
 
 // Mock browser APIs
 const mockRuntime = {

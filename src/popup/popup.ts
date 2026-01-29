@@ -1,4 +1,4 @@
-import { MESSAGE_TYPES } from '../background';
+import { MESSAGE_TYPES } from '../messages';
 
 export function formatCost(cost: number): string {
   return `$${cost.toFixed(2)}`;
@@ -65,14 +65,18 @@ export class PopupController {
         type: MESSAGE_TYPES.GET_COST_STATS,
       });
 
+      const thisWeek = typeof stats?.thisWeek === 'number' ? stats.thisWeek : 0;
+      const thisMonth = typeof stats?.thisMonth === 'number' ? stats.thisMonth : 0;
+      const allTime = typeof stats?.allTime === 'number' ? stats.allTime : 0;
+
       if (this.costThisWeek) {
-        this.costThisWeek.textContent = formatCost(stats.thisWeek);
+        this.costThisWeek.textContent = formatCost(thisWeek);
       }
       if (this.costThisMonth) {
-        this.costThisMonth.textContent = formatCost(stats.thisMonth);
+        this.costThisMonth.textContent = formatCost(thisMonth);
       }
       if (this.costAllTime) {
-        this.costAllTime.textContent = formatCost(stats.allTime);
+        this.costAllTime.textContent = formatCost(allTime);
       }
     } catch (error) {
       console.error('Failed to load cost stats:', error);
@@ -106,8 +110,21 @@ export class PopupController {
         return;
       }
 
-      await browser.tabs.sendMessage(tab.id, {
+      const response = await browser.tabs.sendMessage(tab.id, {
         type: MESSAGE_TYPES.SCRAPE_PAGE,
+      });
+
+      if (!response?.success || !response.tweets) {
+        this.showStatus(response?.error || 'Failed to scrape page');
+        return;
+      }
+
+      await browser.runtime.sendMessage({
+        type: MESSAGE_TYPES.OPEN_TRANSLATE_PAGE,
+        data: {
+          tweets: response.tweets,
+          url: response.url || tab.url || '',
+        },
       });
 
       window.close();

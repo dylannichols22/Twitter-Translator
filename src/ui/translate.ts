@@ -1,4 +1,4 @@
-import { MESSAGE_TYPES } from '../background';
+import { MESSAGE_TYPES } from '../messages';
 import { translateThread } from '../translator';
 import type { TranslatedTweet, Segment, TranslationResult } from '../translator';
 import type { Tweet } from '../scraper';

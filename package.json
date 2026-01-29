@@ -6,14 +6,22 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "build": "vite build && npm run postbuild",
-    "postbuild": "node -e \"require('fs').cpSync('manifest.json', 'dist/manifest.json')\"",
+    "build": "vite build && node scripts/copy-manifest.mjs v2",
+    "build:firefox": "vite build && node scripts/build-scripts.mjs v2 && node scripts/copy-manifest.mjs v2",
+    "build:mv3": "vite build && node scripts/build-scripts.mjs v3 && node scripts/copy-manifest.mjs v3",
+    "package": "npm run build:firefox && web-ext build --overwrite-dest --source-dir dist --artifacts-dir artifacts",
+    "package:mv3": "npm run build:mv3 && web-ext build --overwrite-dest --source-dir dist --artifacts-dir artifacts",
+    "smoke": "npx playwright test",
+    "smoke:firefox": "npm run smoke",
+    "smoke:ext": "npm run smoke",
+    "test:e2e": "npx playwright test",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
     "validate": "npm run typecheck && npm run lint && npm run test"
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@playwright/test": "^1.58.0",
     "@types/firefox-webext-browser": "^120.0.4",
     "@types/node": "^22.10.0",
     "@typescript-eslint/eslint-plugin": "^8.18.0",
@@ -24,5 +32,8 @@
     "typescript": "^5.7.0",
     "vite": "^6.0.0",
     "vitest": "^2.1.0"
+  },
+  "dependencies": {
+    "web-ext": "^9.2.0"
   }
 }
