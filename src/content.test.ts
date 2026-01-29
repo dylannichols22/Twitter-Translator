@@ -62,6 +62,29 @@ describe('Content Script', () => {
       expect(response!.url).toBe('https://twitter.com/user/status/123');
     });
 
+    it('passes scrape options from message data', async () => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <a href="/user/status/111"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>主帖</span></div>
+        </article>
+        <article data-testid="tweet">
+          <a href="/user/status/222"><time datetime="2024-01-15T10:31:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>评论1</span></div>
+        </article>
+      `;
+
+      const response = await handleMessage({
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: { excludeIds: ['222'], commentLimit: 2 },
+      });
+
+      expect(response).toBeDefined();
+      expect(response!.success).toBe(true);
+      expect(response!.tweets).toHaveLength(1);
+      expect(response!.tweets![0].id).toBe('111');
+    });
+
     it('returns error for non-Twitter pages', async () => {
       Object.defineProperty(window, 'location', {
         value: { href: 'https://example.com/page' },
@@ -157,3 +180,4 @@ describe('Content Script', () => {
     });
   });
 });
+

@@ -67,6 +67,22 @@ export async function handleMessage(
   _sender: unknown,
   _sendResponse: (response?: unknown) => void
 ): Promise<unknown> {
+  const normalizeThreadUrl = (url: string): string => {
+    try {
+      const parsed = new URL(url);
+      const normalizedHost = parsed.hostname.replace('x.com', 'twitter.com');
+      return `${normalizedHost}${parsed.pathname}`;
+    } catch {
+      return url;
+    }
+  };
+
+  const findThreadTab = async (url: string): Promise<{ id?: number; url?: string } | undefined> => {
+    const tabs = await browser.tabs.query({ url: ['*://twitter.com/*', '*://x.com/*'] });
+    const target = normalizeThreadUrl(url);
+    return tabs.find((tab) => tab.url && normalizeThreadUrl(tab.url) === target);
+  };
+
   switch (message.type) {
     case MESSAGE_TYPES.OPEN_TRANSLATE_PAGE: {
       const data = message.data as { tweets: unknown[]; url: string };
@@ -125,6 +141,30 @@ export async function handleMessage(
       const cacheData = message.data as { url: string; translation: unknown };
       translationCache.set(cacheData.url, cacheData.translation as never);
       return { success: true };
+    }
+
+    case MESSAGE_TYPES.SCRAPE_MORE:
+    case MESSAGE_TYPES.SCRAPE_CHILD_REPLIES: {
+      const data = message.data as {
+        url: string;
+        commentLimit?: number;
+        excludeIds?: string[];
+        parentId?: string;
+      };
+
+      const tab = await findThreadTab(data.url);
+      if (!tab?.id) {
+        return { success: false, error: 'Source tab not found' };
+      }
+
+      return await browser.tabs.sendMessage(tab.id, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: {
+          commentLimit: data.commentLimit,
+          excludeIds: data.excludeIds,
+          parentId: data.parentId,
+        },
+      });
     }
 
     case MESSAGE_TYPES.SMOKE_PING: {

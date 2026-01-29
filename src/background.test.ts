@@ -164,6 +164,58 @@ describe('Background Script', () => {
       expect(result).toHaveProperty('apiKey');
       expect(result).toHaveProperty('commentLimit');
     });
+
+    it('forwards SCRAPE_MORE to content script with options', async () => {
+      mockTabs.query.mockResolvedValue([{ id: 123, url: 'https://twitter.com/user/status/1' }]);
+      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
+
+      const message: Message = {
+        type: MESSAGE_TYPES.SCRAPE_MORE,
+        data: {
+          url: 'https://twitter.com/user/status/1',
+          commentLimit: 5,
+          excludeIds: ['1'],
+        },
+      };
+
+      const result = await handleMessage(message, {}, vi.fn());
+
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: {
+          commentLimit: 5,
+          excludeIds: ['1'],
+          parentId: undefined,
+        },
+      });
+      expect(result).toEqual({ success: true, tweets: [] });
+    });
+
+    it('forwards SCRAPE_CHILD_REPLIES to content script with parentId', async () => {
+      mockTabs.query.mockResolvedValue([{ id: 123, url: 'https://twitter.com/user/status/1' }]);
+      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
+
+      const message: Message = {
+        type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
+        data: {
+          url: 'https://twitter.com/user/status/1',
+          parentId: '42',
+          excludeIds: ['1'],
+        },
+      };
+
+      const result = await handleMessage(message, {}, vi.fn());
+
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: {
+          commentLimit: undefined,
+          excludeIds: ['1'],
+          parentId: '42',
+        },
+      });
+      expect(result).toEqual({ success: true, tweets: [] });
+    });
   });
 
   describe('MESSAGE_TYPES', () => {
@@ -172,6 +224,8 @@ describe('Background Script', () => {
       expect(MESSAGE_TYPES.OPEN_TRANSLATE_PAGE).toBeDefined();
       expect(MESSAGE_TYPES.GET_SETTINGS).toBeDefined();
       expect(MESSAGE_TYPES.SAVE_SETTINGS).toBeDefined();
+      expect(MESSAGE_TYPES.SCRAPE_MORE).toBeDefined();
+      expect(MESSAGE_TYPES.SCRAPE_CHILD_REPLIES).toBeDefined();
     });
   });
 });

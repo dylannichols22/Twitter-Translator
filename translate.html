@@ -117,11 +117,28 @@
       border: 1px solid var(--border);
       box-shadow: var(--shadow-soft);
       transition: box-shadow 0.2s, transform 0.2s;
+      margin-left: calc(var(--depth, 0) * 18px);
+      position: relative;
     }
 
     .tweet-card:hover {
       box-shadow: var(--shadow);
       transform: translateY(-1px);
+    }
+
+    .tweet-card[data-depth="0"]::before {
+      content: none;
+    }
+
+    .tweet-card::before {
+      content: '';
+      position: absolute;
+      left: -10px;
+      top: 12px;
+      bottom: 12px;
+      width: 2px;
+      background: var(--border-strong);
+      opacity: 0.6;
     }
 
     .tweet-card.main-post {
@@ -170,6 +187,28 @@
       padding-top: 8px;
       border-top: 1px dashed var(--border);
       white-space: pre-wrap;
+    }
+
+    .tweet-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .tweet-action-btn {
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .tweet-action-btn:hover {
+      background: var(--bg-accent);
+      transform: translateY(-1px);
     }
 
     .tweet-breakdown {
@@ -287,6 +326,25 @@
       padding: 40px;
       color: var(--muted);
     }
+
+    .load-more-btn {
+      display: block;
+      width: 100%;
+      margin-top: 16px;
+      padding: 12px 16px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.2s;
+    }
+
+    .load-more-btn:hover {
+      background: var(--bg-accent);
+      transform: translateY(-1px);
+    }
   </style>
 </head>
 <body>
@@ -303,6 +361,7 @@
   <div id="error-message" class="hidden"></div>
 
   <div id="tweets-container"></div>
+  <button id="load-more-btn" class="load-more-btn hidden">Load more replies</button>
 
   <script type="module" src="src/ui/translate.ts"></script>
 </body>

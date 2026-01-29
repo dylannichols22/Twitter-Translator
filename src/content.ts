@@ -1,4 +1,4 @@
-import { scrapeTweets, Tweet } from './scraper';
+import { scrapeTweets, Tweet, ScrapeOptions } from './scraper';
 import { MESSAGE_TYPES, Message } from './messages';
 
 interface ScrapeResponse {
@@ -27,13 +27,17 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
   }
 
   try {
+    const options = (message.data as ScrapeOptions | undefined) ?? {};
+
     // Get comment limit from settings
     const settings = await browser.runtime.sendMessage({
       type: MESSAGE_TYPES.GET_SETTINGS,
     });
 
     const { tweets } = scrapeTweets({
-      commentLimit: settings?.commentLimit,
+      commentLimit: options.commentLimit ?? settings?.commentLimit,
+      excludeIds: options.excludeIds,
+      parentId: options.parentId,
     });
 
     return {

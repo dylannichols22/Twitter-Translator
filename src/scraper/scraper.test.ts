@@ -139,5 +139,41 @@ describe('Twitter Scraper', () => {
       const result = scrapeTweets();
       expect(result.tweets[0].id).toBe('1234567890');
     });
+    it('filters out excluded tweet IDs', () => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <a href="/user/status/111"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>主帖</span></div>
+        </article>
+        <article data-testid="tweet">
+          <a href="/user/status/222"><time datetime="2024-01-15T10:31:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>评论1</span></div>
+        </article>
+      `;
+
+      const result = scrapeTweets({ excludeIds: ['222'] });
+      expect(result.tweets).toHaveLength(1);
+      expect(result.tweets[0].id).toBe('111');
+    });
+
+    it('returns child replies for a parent ID', () => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <a href="/user/status/100"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>主帖</span></div>
+        </article>
+        <article data-testid="tweet">
+          <a href="/user/status/100">Replying to</a>
+          <a href="/user/status/101"><time datetime="2024-01-15T10:31:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>回复1</span></div>
+        </article>
+      `;
+
+      const result = scrapeTweets({ parentId: '100' });
+      expect(result.tweets).toHaveLength(1);
+      expect(result.tweets[0].id).toBe('101');
+      expect(result.tweets[0].parentId).toBe('100');
+      expect(result.tweets[0].depth).toBe(1);
+    });
   });
 });
