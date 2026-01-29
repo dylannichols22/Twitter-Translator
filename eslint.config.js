@@ -16,6 +16,7 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.es2022,
+        browser: 'readonly', // Firefox WebExtension API
       },
     },
     plugins: {
