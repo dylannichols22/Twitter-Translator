@@ -139,9 +139,12 @@ export function renderTweet(
   original.textContent = tweet.text;
   body.appendChild(original);
 
-  // Breakdown container (initially hidden)
+  // Breakdown container (initially hidden) with inner wrapper for CSS grid animation
   const breakdown = document.createElement('div');
   breakdown.className = 'tweet-breakdown hidden';
+  const breakdownInner = document.createElement('div');
+  breakdownInner.className = 'breakdown-inner';
+  breakdown.appendChild(breakdownInner);
   body.appendChild(breakdown);
 
   if ('segments' in translation && 'notes' in translation) {
@@ -149,7 +152,7 @@ export function renderTweet(
       segments: translation.segments,
       notes: translation.notes,
     });
-    breakdown.appendChild(breakdownContent);
+    breakdownInner.appendChild(breakdownContent);
   }
 
   const defaultToggle = () => {
@@ -327,10 +330,12 @@ export class TranslateViewController {
     }
 
     if (isExpanding) {
+      const breakdownInner = breakdownEl.querySelector('.breakdown-inner') || breakdownEl;
+
       // Check if breakdown already loaded
       if (!this.breakdownCache.has(tweet.id)) {
         // Show loading state
-        breakdownEl.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
+        breakdownInner.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
         breakdownEl.classList.remove('hidden');
         article.classList.add('expanded');
 
@@ -355,16 +360,16 @@ export class TranslateViewController {
           this.breakdownCache.set(tweet.id, result.breakdown);
 
           // Render breakdown
-          breakdownEl.innerHTML = '';
-          breakdownEl.appendChild(renderBreakdownContent(result.breakdown));
+          breakdownInner.innerHTML = '';
+          breakdownInner.appendChild(renderBreakdownContent(result.breakdown));
         } catch (error) {
-          breakdownEl.innerHTML = `<div class="breakdown-error">Failed to load breakdown: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
+          breakdownInner.innerHTML = `<div class="breakdown-error">Failed to load breakdown: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
         }
       } else {
         // Use cached breakdown
         const cached = this.breakdownCache.get(tweet.id)!;
-        if (breakdownEl.children.length === 0) {
-          breakdownEl.appendChild(renderBreakdownContent(cached));
+        if (breakdownInner.children.length === 0) {
+          breakdownInner.appendChild(renderBreakdownContent(cached));
         }
         breakdownEl.classList.remove('hidden');
         article.classList.add('expanded');

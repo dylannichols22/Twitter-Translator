@@ -262,6 +262,19 @@
 
     .tweet-breakdown {
       margin-top: 16px;
+      display: grid;
+      grid-template-rows: 0fr;
+      opacity: 0;
+      transition: grid-template-rows 0.3s ease-out, opacity 0.2s ease-out;
+    }
+
+    .tweet-breakdown:not(.hidden) {
+      grid-template-rows: 1fr;
+      opacity: 1;
+    }
+
+    .tweet-breakdown > .breakdown-inner {
+      overflow: hidden;
       padding: 16px;
       background: var(--surface-muted);
       border-radius: 12px;

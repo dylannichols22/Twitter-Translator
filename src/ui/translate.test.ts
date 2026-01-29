@@ -180,6 +180,32 @@ describe('Translation View', () => {
       const button = element.querySelector('.tweet-load-children');
       expect(button).toBeNull();
     });
+
+    it('breakdown section has inner wrapper for CSS grid animation', () => {
+      const element = renderTweet(mockTweet, mockTranslation);
+      const breakdown = element.querySelector('.tweet-breakdown');
+      const inner = breakdown?.querySelector('.breakdown-inner');
+      expect(inner).toBeTruthy();
+    });
+
+    it('uses expanded class for toggle instead of just removing hidden', () => {
+      const element = renderTweet(mockTweet, mockTranslation);
+      document.body.appendChild(element);
+
+      const header = element.querySelector('.tweet-header');
+      const breakdown = element.querySelector('.tweet-breakdown');
+
+      // Initially hidden
+      expect(breakdown?.classList.contains('hidden')).toBe(true);
+
+      // Click to expand
+      header?.dispatchEvent(new Event('click'));
+      expect(element.classList.contains('expanded')).toBe(true);
+
+      // Click to collapse
+      header?.dispatchEvent(new Event('click'));
+      expect(element.classList.contains('expanded')).toBe(false);
+    });
   });
 
   describe('TranslateViewController', () => {
