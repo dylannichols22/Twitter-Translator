@@ -3,3 +3,7 @@ dist/
 *.log
 .DS_Store
 .claude/
+artifacts/
+test-results/
+.smoke-profile-*
+nul
