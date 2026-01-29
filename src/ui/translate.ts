@@ -279,6 +279,19 @@ export class TranslateViewController {
     }
   }
 
+  showProgress(progress: { completed: number; total: number }): void {
+    if (this.loadingEl) {
+      const progressText = this.loadingEl.querySelector('.loading-progress');
+      if (progressText) {
+        if (progress.total > 0) {
+          progressText.textContent = `Translating ${progress.completed} of ${progress.total}...`;
+        } else {
+          progressText.textContent = 'Translating content...';
+        }
+      }
+    }
+  }
+
   showEstimatedCost(): void {
     if (!this.estimatedCostEl || this.tweets.length === 0) return;
 

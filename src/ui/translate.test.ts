@@ -235,7 +235,10 @@ describe('Translation View', () => {
     beforeEach(() => {
       document.body.innerHTML = `
         <div id="tweets-container"></div>
-        <div id="loading"></div>
+        <div id="loading">
+          <div class="spinner"></div>
+          <p class="loading-progress">Translating content...</p>
+        </div>
         <div id="error-message"></div>
         <div id="estimated-cost"></div>
       `;
@@ -306,6 +309,22 @@ describe('Translation View', () => {
 
       const error = document.getElementById('error-message');
       expect(error?.textContent).toContain('Translation failed');
+    });
+
+    it('shows progress text during translation', () => {
+      const controller = new TranslateViewController();
+      controller.showProgress({ completed: 3, total: 10 });
+
+      const progress = document.querySelector('.loading-progress');
+      expect(progress?.textContent).toBe('Translating 3 of 10...');
+    });
+
+    it('shows default text when progress is reset', () => {
+      const controller = new TranslateViewController();
+      controller.showProgress({ completed: 0, total: 0 });
+
+      const progress = document.querySelector('.loading-progress');
+      expect(progress?.textContent).toBe('Translating content...');
     });
 
     it('shows estimated cost for current tweets', () => {
