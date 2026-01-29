@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twitter Chinese Translator</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      width: 320px;
+      padding: 16px;
+      background: #fff;
+    }
+
+    h1 {
+      font-size: 16px;
+      margin-bottom: 16px;
+      color: #1a1a1a;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 8px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-primary {
+      background: #1d9bf0;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #1a8cd8;
+    }
+
+    .btn-secondary {
+      background: #eff3f4;
+      color: #0f1419;
+    }
+
+    .btn-secondary:hover {
+      background: #e1e8ea;
+    }
+
+    .settings-form {
+      margin-bottom: 16px;
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: #536471;
+      margin-bottom: 4px;
+    }
+
+    input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #cfd9de;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #1d9bf0;
+    }
+
+    .cost-stats {
+      background: #f7f9f9;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+
+    .cost-stats h3 {
+      font-size: 12px;
+      color: #536471;
+      margin-bottom: 8px;
+    }
+
+    .cost-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      padding: 4px 0;
+    }
+
+    .cost-row span:last-child {
+      font-weight: 600;
+    }
+
+    .status-message {
+      text-align: center;
+      font-size: 12px;
+      color: #00ba7c;
+      min-height: 18px;
+      margin-top: 8px;
+    }
+
+    .privacy-note {
+      font-size: 11px;
+      color: #536471;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #eff3f4;
+    }
+  </style>
+</head>
+<body>
+  <!-- Main View -->
+  <div id="main-view">
+    <h1>Twitter Chinese Translator</h1>
+    <button id="translate-btn" class="btn btn-primary">
+      Translate Chinese Content
+    </button>
+    <button id="settings-btn" class="btn btn-secondary">
+      Settings
+    </button>
+  </div>
+
+  <!-- Settings View -->
+  <div id="settings-view" class="hidden">
+    <h1>Settings</h1>
+
+    <div class="settings-form">
+      <div class="form-group">
+        <label for="api-key-input">Claude API Key</label>
+        <input type="password" id="api-key-input" placeholder="sk-ant-...">
+      </div>
+
+      <div class="form-group">
+        <label for="comment-limit-input">Max Comments to Translate</label>
+        <input type="number" id="comment-limit-input" min="1" max="50" value="10">
+      </div>
+    </div>
+
+    <div class="cost-stats">
+      <h3>API Usage</h3>
+      <div class="cost-row">
+        <span>This Week:</span>
+        <span id="cost-this-week">$0.00</span>
+      </div>
+      <div class="cost-row">
+        <span>This Month:</span>
+        <span id="cost-this-month">$0.00</span>
+      </div>
+      <div class="cost-row">
+        <span>All Time:</span>
+        <span id="cost-all-time">$0.00</span>
+      </div>
+    </div>
+
+    <button id="save-settings-btn" class="btn btn-primary">
+      Save Settings
+    </button>
+    <button id="back-btn" class="btn btn-secondary">
+      Back
+    </button>
+
+    <div id="status-message" class="status-message"></div>
+
+    <p class="privacy-note">
+      Note: Tweet content is sent to Anthropic's API for translation.
+    </p>
+  </div>
+
+  <script type="module" src="src/popup/popup.ts"></script>
+</body>
+</html>
