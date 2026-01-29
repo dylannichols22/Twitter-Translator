@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Twitter Chinese Translator",
+  "version": "0.1.0",
+  "description": "Translate Chinese Twitter content with AI-powered breakdown",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://twitter.com/*",
+    "https://x.com/*",
+    "https://api.anthropic.com/*"
+  ],
+  "background": {
+    "scripts": ["src/background.ts"],
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Twitter Chinese Translator"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["src/content.ts"]
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "twitter-chinese-translator@example.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}
