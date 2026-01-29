@@ -11,6 +11,7 @@ import {
   renderNotes,
   TranslateViewController,
 } from './translate';
+import { renderSkeletonContainer } from './skeleton';
 import type { TranslatedTweet, Segment } from '../translator';
 import type { Tweet } from '../scraper';
 
@@ -161,12 +162,6 @@ describe('Translation View', () => {
       expect(replyElement.classList.contains('main-post')).toBe(false);
     });
 
-    it('sets depth styling for nested replies', () => {
-      const nestedTweet = { ...mockTweet, isMainPost: false, depth: 2 };
-      const element = renderTweet(nestedTweet, mockTranslation);
-      expect(element.style.getPropertyValue('--depth')).toBe('2');
-    });
-
     it('shows a load replies button for comments', () => {
       const replyTweet = { ...mockTweet, isMainPost: false };
       const onLoadChildren = vi.fn();
@@ -177,6 +172,13 @@ describe('Translation View', () => {
 
       button?.dispatchEvent(new Event('click'));
       expect(onLoadChildren).toHaveBeenCalledWith(replyTweet);
+    });
+
+    it('hides load replies button when no replies', () => {
+      const replyTweet = { ...mockTweet, isMainPost: false, hasReplies: false };
+      const element = renderTweet(replyTweet, mockTranslation);
+      const button = element.querySelector('.tweet-load-children');
+      expect(button).toBeNull();
     });
   });
 
@@ -220,6 +222,25 @@ describe('Translation View', () => {
 
       const loading = document.getElementById('loading');
       expect(loading?.classList.contains('hidden')).toBe(false);
+    });
+
+    it('shows skeleton cards when loading starts', () => {
+      const tweetsContainer = document.getElementById('tweets-container');
+      const controller = new TranslateViewController();
+      controller.showLoading(true);
+
+      const skeletons = tweetsContainer?.querySelectorAll('.tweet-skeleton');
+      expect(skeletons?.length).toBeGreaterThan(0);
+    });
+
+    it('removes skeleton cards when loading ends', () => {
+      const tweetsContainer = document.getElementById('tweets-container');
+      const controller = new TranslateViewController();
+      controller.showLoading(true);
+      controller.showLoading(false);
+
+      const skeletons = tweetsContainer?.querySelectorAll('.tweet-skeleton');
+      expect(skeletons?.length).toBe(0);
     });
 
     it('hides loading state when done', () => {
@@ -462,7 +483,54 @@ describe('Translation View', () => {
       expect(secondCallTweets[0].id).toBe('2');
     });
 
-    it('loads child replies without re-sending existing tweets', async () => {
+    it('hides load more button when no more replies', async () => {
+      document.body.innerHTML = `
+        <div id="tweets-container"></div>
+        <div id="loading"></div>
+        <div id="error-message"></div>
+        <div id="estimated-cost"></div>
+        <button id="load-more-btn"></button>
+      `;
+
+      const tweetData = {
+        tweets: [{ id: '1', text: 'ä½ å¥½', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 1 };
+        if (message.type === 'SCRAPE_MORE') {
+          return { success: true, tweets: [], url: 'https://twitter.com/user/status/1' };
+        }
+        return { success: true };
+      });
+
+      vi.mocked(translateQuickStreaming).mockImplementation(
+        async (_tweets, _apiKey, callbacks) => {
+          callbacks.onTranslation({ id: '1', naturalTranslation: 'T-1' });
+          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
+        }
+      );
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      const loadMore = document.getElementById('load-more-btn');
+      loadMore?.dispatchEvent(new Event('click'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(loadMore?.classList.contains('hidden')).toBe(true);
+    });
+
+
+    it('opens a new translate tab for reply threads', async () => {
       document.body.innerHTML = `
         <div id="tweets-container"></div>
         <div id="loading"></div>
@@ -473,8 +541,8 @@ describe('Translation View', () => {
 
       const tweetData = {
         tweets: [
-          { id: '1', text: 'ä¸»å¸–', author: 'Main', timestamp: '', isMainPost: true },
-          { id: '2', text: 'å›žå¤', author: 'Reply', timestamp: '', isMainPost: false },
+          { id: '1', text: 'Main post', author: 'Main', timestamp: '', isMainPost: true },
+          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, url: 'https://twitter.com/user/status/2' },
         ],
         url: 'https://twitter.com/user/status/1',
       };
@@ -492,10 +560,14 @@ describe('Translation View', () => {
           return {
             success: true,
             tweets: [
-              { id: '3', text: 'å­å›žå¤', author: 'Child', timestamp: '', isMainPost: false, parentId: '2' },
+              { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
+              { id: '3', text: 'Child reply', author: 'Child', timestamp: '', isMainPost: false },
             ],
             url: 'https://twitter.com/user/status/1',
           };
+        }
+        if (message.type === 'OPEN_TRANSLATE_PAGE') {
+          return { success: true };
         }
         return { success: true };
       });
@@ -516,10 +588,87 @@ describe('Translation View', () => {
       loadChildButton?.dispatchEvent(new Event('click'));
       await new Promise((resolve) => setTimeout(resolve, 0));
 
-      expect(translateQuickStreaming).toHaveBeenCalledTimes(2);
-      const secondCallTweets = vi.mocked(translateQuickStreaming).mock.calls[1][0] as { id: string }[];
-      expect(secondCallTweets).toHaveLength(1);
-      expect(secondCallTweets[0].id).toBe('3');
+      expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
+        type: 'SCRAPE_CHILD_REPLIES',
+        data: expect.objectContaining({
+          threadUrl: 'https://twitter.com/user/status/2',
+        }),
+      });
+
+      expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
+        type: 'OPEN_TRANSLATE_PAGE',
+        data: {
+          tweets: [
+            { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
+            { id: '3', text: 'Child reply', author: 'Child', timestamp: '', isMainPost: false },
+          ],
+          url: 'https://twitter.com/user/status/2',
+        },
+      });
+
+      expect(translateQuickStreaming).toHaveBeenCalledTimes(1);
+    });
+
+
+    it('shows an error when no reply thread is available', async () => {
+      document.body.innerHTML = `
+        <div id="tweets-container"></div>
+        <div id="loading"></div>
+        <div id="error-message"></div>
+        <div id="estimated-cost"></div>
+        <button id="load-more-btn"></button>
+      `;
+
+      const tweetData = {
+        tweets: [
+          { id: '1', text: 'Main post', author: 'Main', timestamp: '', isMainPost: true },
+          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, hasReplies: true, url: 'https://twitter.com/user/status/2' },
+        ],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
+        if (message.type === 'SCRAPE_CHILD_REPLIES') {
+          return {
+            success: true,
+            tweets: [
+              { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
+            ],
+            url: 'https://twitter.com/user/status/1',
+          };
+        }
+        return { success: true };
+      });
+
+      vi.mocked(translateQuickStreaming).mockImplementation(
+        async (_tweets, _apiKey, callbacks) => {
+          callbacks.onTranslation({ id: '1', naturalTranslation: 'T-1' });
+          callbacks.onTranslation({ id: '2', naturalTranslation: 'T-2' });
+          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
+        }
+      );
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      const loadChildButton = document.querySelector('.tweet-load-children');
+      loadChildButton?.dispatchEvent(new Event('click'));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const error = document.getElementById('error-message');
+      expect(error?.textContent).toContain('No replies to show');
+      expect(mockRuntime.sendMessage).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'OPEN_TRANSLATE_PAGE' })
+      );
     });
   });
 });
+

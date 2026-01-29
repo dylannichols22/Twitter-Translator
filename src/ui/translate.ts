@@ -4,6 +4,7 @@ import type { QuickTranslation, Segment, Breakdown, UsageStats, TranslatedTweet 
 import type { Tweet } from '../scraper';
 import { estimateCost, calculateCost } from '../cost';
 import { formatCost } from '../popup/popup';
+import { renderSkeletonContainer } from './skeleton';
 
 export function renderSegmentTable(segments: Segment[]): HTMLTableElement {
   const table = document.createElement('table');
@@ -87,13 +88,28 @@ export function renderTweet(
   onLoadChildren?: (tweet: Tweet) => void
 ): HTMLElement {
   const article = document.createElement('article');
-  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'}`;
+  const inlineClass = tweet.inlineReply ? 'inline-reply' : '';
+  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'} ${inlineClass}`.trim();
   article.dataset.tweetId = tweet.id;
-  const depth = typeof tweet.depth === 'number' ? tweet.depth : tweet.isMainPost ? 0 : 1;
-  article.dataset.depth = depth.toString();
-  article.style.setProperty('--depth', depth.toString());
 
   // Header (clickable to expand)
+  const shell = document.createElement('div');
+  shell.className = 'tweet-shell';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'tweet-avatar';
+  const initials = (tweet.author || 'U')
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('') || 'U';
+  avatar.textContent = initials;
+  shell.appendChild(avatar);
+
+  const body = document.createElement('div');
+  body.className = 'tweet-body';
+
   const header = document.createElement('div');
   header.className = 'tweet-header';
 
@@ -109,24 +125,24 @@ export function renderTweet(
   }
   header.appendChild(timestamp);
 
-  article.appendChild(header);
+  body.appendChild(header);
 
   // Translation
   const translationEl = document.createElement('div');
   translationEl.className = 'tweet-translation';
   translationEl.textContent = translation.naturalTranslation;
-  article.appendChild(translationEl);
+  body.appendChild(translationEl);
 
   // Original text
   const original = document.createElement('div');
   original.className = 'tweet-original';
   original.textContent = tweet.text;
-  article.appendChild(original);
+  body.appendChild(original);
 
   // Breakdown container (initially hidden)
   const breakdown = document.createElement('div');
   breakdown.className = 'tweet-breakdown hidden';
-  article.appendChild(breakdown);
+  body.appendChild(breakdown);
 
   if ('segments' in translation && 'notes' in translation) {
     const breakdownContent = renderBreakdownContent({
@@ -150,22 +166,25 @@ export function renderTweet(
     defaultToggle();
   });
 
-  if (!tweet.isMainPost) {
+  if (!tweet.isMainPost && tweet.hasReplies !== false) {
     const actions = document.createElement('div');
     actions.className = 'tweet-actions';
 
     const loadChildren = document.createElement('button');
     loadChildren.className = 'tweet-action-btn tweet-load-children';
     loadChildren.type = 'button';
-    loadChildren.textContent = 'Load replies';
+    loadChildren.textContent = 'Show replies';
     loadChildren.addEventListener('click', (event) => {
       event.stopPropagation();
       onLoadChildren?.(tweet);
     });
 
     actions.appendChild(loadChildren);
-    article.appendChild(actions);
+    body.appendChild(actions);
   }
+
+  shell.appendChild(body);
+  article.appendChild(shell);
 
   return article;
 }
@@ -236,6 +255,16 @@ export class TranslateViewController {
     if (this.loadingEl) {
       this.loadingEl.classList.toggle('hidden', !show);
     }
+    if (this.tweetsContainer) {
+      if (show) {
+        // Add skeleton cards for visual loading state
+        this.tweetsContainer.appendChild(renderSkeletonContainer(3));
+      } else {
+        // Remove skeleton cards
+        const skeletons = this.tweetsContainer.querySelectorAll('.tweet-skeleton');
+        skeletons.forEach((skeleton) => skeleton.remove());
+      }
+    }
   }
 
   showError(message: string): void {
@@ -265,7 +294,7 @@ export class TranslateViewController {
     return renderTweet(tweet, translation, (article, breakdown) => {
       void this.toggleBreakdown(article, tweet, breakdown);
     }, (targetTweet) => {
-      void this.loadChildReplies(targetTweet);
+      void this.openReplyThread(targetTweet);
     });
   }
 
@@ -273,7 +302,7 @@ export class TranslateViewController {
     return renderTweet(tweet, translation, (article, breakdown) => {
       void this.toggleBreakdown(article, tweet, breakdown);
     }, (targetTweet) => {
-      void this.loadChildReplies(targetTweet);
+      void this.openReplyThread(targetTweet);
     });
   }
 
@@ -471,7 +500,7 @@ export class TranslateViewController {
 
   private async translateNewTweets(newTweets: Tweet[]): Promise<void> {
     if (newTweets.length === 0) {
-      this.showError('No new replies to translate');
+      this.showLoading(false);
       return;
     }
 
@@ -557,9 +586,28 @@ export class TranslateViewController {
       return;
     }
 
-    const newTweets = response.tweets as Tweet[];
-    this.mergeTweets(newTweets);
-    const untranslated = newTweets.filter((tweet) => !this.translatedIds.has(tweet.id));
+    const responseTweets = response.tweets as Tweet[];
+    const freshTweets = responseTweets.filter((tweet) => !this.knownTweetIds.has(tweet.id));
+    if (freshTweets.length === 0) {
+      this.showLoadMore(false);
+      this.isLoadingMore = false;
+      if (this.loadMoreBtn) {
+        this.loadMoreBtn.disabled = false;
+      }
+      return;
+    }
+
+    this.mergeTweets(freshTweets);
+    const untranslated = freshTweets.filter((tweet) => !this.translatedIds.has(tweet.id));
+
+    if (untranslated.length === 0) {
+      this.showLoadMore(false);
+      this.isLoadingMore = false;
+      if (this.loadMoreBtn) {
+        this.loadMoreBtn.disabled = false;
+      }
+      return;
+    }
 
     await this.translateNewTweets(untranslated);
 
@@ -569,38 +617,48 @@ export class TranslateViewController {
     }
   }
 
-  private async loadChildReplies(parentTweet: Tweet): Promise<void> {
-    if (this.isLoadingMore || !this.sourceUrl) return;
+  private async openReplyThread(parentTweet: Tweet): Promise<void> {
+    if (this.isLoadingMore) return;
+
+    if (!parentTweet.url) {
+      this.showError('No reply thread available for this post');
+      return;
+    }
+
     this.isLoadingMore = true;
+
+    const replyLimit = this.commentLimit > 0 ? this.commentLimit : undefined;
 
     const response = await browser.runtime.sendMessage({
       type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
       data: {
         url: this.sourceUrl,
-        parentId: parentTweet.id,
-        excludeIds: Array.from(this.knownTweetIds),
+        threadUrl: parentTweet.url,
+        commentLimit: replyLimit,
       },
     });
 
     if (!response?.success || !response.tweets) {
-      this.showError(response?.error || 'Failed to load child replies');
+      this.showError(response?.error || 'Failed to open reply thread');
       this.isLoadingMore = false;
       return;
     }
 
-    const newTweets = (response.tweets as Tweet[]).map((tweet) => {
-      if (tweet.parentId === parentTweet.id) {
-        const parentDepth = typeof parentTweet.depth === 'number'
-          ? parentTweet.depth
-          : parentTweet.isMainPost ? 0 : 1;
-        return { ...tweet, depth: parentDepth + 1 };
-      }
-      return tweet;
-    });
+    const responseTweets = response.tweets as Tweet[];
+    const childReplies = responseTweets.filter((tweet) => !tweet.isMainPost);
+    if (responseTweets.length === 0 || childReplies.length === 0) {
+      this.showError('No replies to show');
+      this.isLoadingMore = false;
+      return;
+    }
 
-    this.mergeTweets(newTweets);
-    const untranslated = newTweets.filter((tweet) => !this.translatedIds.has(tweet.id));
-    await this.translateNewTweets(untranslated);
+    await browser.runtime.sendMessage({
+      type: MESSAGE_TYPES.OPEN_TRANSLATE_PAGE,
+      data: {
+        tweets: responseTweets,
+        url: parentTweet.url,
+      },
+    });
 
     this.isLoadingMore = false;
   }
