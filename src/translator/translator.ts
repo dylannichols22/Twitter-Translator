@@ -54,6 +54,175 @@ function extractJson(text: string): string {
   return jsonText;
 }
 
+function normalizeBreakdown(parsed: Partial<Breakdown>): Breakdown {
+  return {
+    segments: Array.isArray(parsed.segments) ? parsed.segments : [],
+    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
+  };
+}
+
+function isStringDelimiter(char: string): boolean {
+  return char === '"' || char === "'";
+}
+
+function extractNotes(jsonText: string): string[] {
+  const notesMatch = jsonText.match(/"notes"\s*:\s*\[/);
+  if (!notesMatch || notesMatch.index === undefined) return [];
+
+  const start = jsonText.indexOf('[', notesMatch.index);
+  if (start === -1) return [];
+
+  let inString = false;
+  let stringChar = '';
+  let escape = false;
+  let depth = 0;
+
+  for (let i = start; i < jsonText.length; i += 1) {
+    const char = jsonText[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === '\\') {
+        escape = true;
+      } else if (char === stringChar) {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (isStringDelimiter(char)) {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+
+    if (char === '[') {
+      depth += 1;
+    } else if (char === ']') {
+      depth -= 1;
+      if (depth === 0) {
+        const slice = jsonText.slice(start, i + 1);
+        try {
+          const parsed = JSON.parse(slice);
+          return Array.isArray(parsed) ? parsed : [];
+        } catch {
+          return [];
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
+function extractSegments(jsonText: string): Segment[] {
+  const segmentsMatch = jsonText.match(/"segments"\s*:\s*\[/);
+  if (!segmentsMatch || segmentsMatch.index === undefined) return [];
+
+  const arrayStart = jsonText.indexOf('[', segmentsMatch.index);
+  if (arrayStart === -1) return [];
+
+  const segments: Segment[] = [];
+  let inString = false;
+  let stringChar = '';
+  let escape = false;
+
+  for (let i = arrayStart + 1; i < jsonText.length; i += 1) {
+    const char = jsonText[i];
+
+    if (inString) {
+      if (escape) {
+        escape = false;
+      } else if (char === '\\') {
+        escape = true;
+      } else if (char === stringChar) {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (isStringDelimiter(char)) {
+      inString = true;
+      stringChar = char;
+      continue;
+    }
+
+    if (char !== '{') {
+      continue;
+    }
+
+    let depth = 0;
+    let innerInString = false;
+    let innerStringChar = '';
+    let innerEscape = false;
+    let end = -1;
+
+    for (let j = i; j < jsonText.length; j += 1) {
+      const innerChar = jsonText[j];
+
+      if (innerInString) {
+        if (innerEscape) {
+          innerEscape = false;
+        } else if (innerChar === '\\') {
+          innerEscape = true;
+        } else if (innerChar === innerStringChar) {
+          innerInString = false;
+        }
+        continue;
+      }
+
+      if (isStringDelimiter(innerChar)) {
+        innerInString = true;
+        innerStringChar = innerChar;
+        continue;
+      }
+
+      if (innerChar === '{') {
+        depth += 1;
+      } else if (innerChar === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          end = j;
+          break;
+        }
+      }
+    }
+
+    if (end === -1) {
+      break;
+    }
+
+    const slice = jsonText.slice(i, end + 1);
+    try {
+      const parsed = JSON.parse(slice) as Segment;
+      if (parsed && parsed.chinese && parsed.pinyin && parsed.gloss) {
+        segments.push(parsed);
+      }
+    } catch {
+      // Skip malformed segment
+    }
+
+    i = end;
+  }
+
+  return segments;
+}
+
+function parseBreakdownResponse(jsonText: string): Breakdown {
+  try {
+    const parsed = JSON.parse(jsonText) as Partial<Breakdown>;
+    return normalizeBreakdown(parsed);
+  } catch {
+    const segments = extractSegments(jsonText);
+    const notes = extractNotes(jsonText);
+    if (segments.length > 0) {
+      return { segments, notes };
+    }
+    throw new Error('Failed to parse breakdown response.');
+  }
+}
+
 const QUICK_SYSTEM_PROMPT = `You are a Chinese language expert. Translate the provided Chinese tweets into natural, fluent English.
 
 IMPORTANT: Return ONLY valid JSON matching this exact structure:
@@ -99,6 +268,18 @@ export interface QuickStreamCallbacks {
   onTranslation: (translation: QuickTranslation) => void;
   onComplete: (usage: UsageStats) => void;
   onError: (error: Error) => void;
+}
+
+interface QuickTranslationApiResponse {
+  translations: QuickTranslation[];
+}
+
+function parseQuickTranslationResponse(jsonText: string): QuickTranslation[] {
+  const parsed = JSON.parse(jsonText) as QuickTranslationApiResponse;
+  if (!parsed || !Array.isArray(parsed.translations)) {
+    throw new Error('Invalid quick translation response');
+  }
+  return parsed.translations.filter((t) => t?.id && t?.naturalTranslation);
 }
 
 // Quick streaming translation - just natural translations
@@ -158,7 +339,30 @@ export async function translateQuickStreaming(
       outputTokens: finalMessage.usage.output_tokens,
     });
   } catch (error) {
-    callbacks.onError(error instanceof Error ? error : new Error('Translation failed'));
+    try {
+      const response = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 2048,
+        system: QUICK_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+
+      const textContent = response.content.find((c) => c.type === 'text');
+      if (!textContent || textContent.type !== 'text') {
+        throw new Error('No text response from API');
+      }
+
+      const jsonText = extractJson(textContent.text);
+      const translations = parseQuickTranslationResponse(jsonText);
+
+      translations.forEach((translation) => callbacks.onTranslation(translation));
+      callbacks.onComplete({
+        inputTokens: response.usage.input_tokens,
+        outputTokens: response.usage.output_tokens,
+      });
+    } catch (fallbackError) {
+      callbacks.onError(fallbackError instanceof Error ? fallbackError : new Error('Translation failed'));
+    }
   }
 }
 
@@ -188,9 +392,11 @@ export async function getBreakdown(text: string, apiKey: string): Promise<Breakd
 
   let parsed: Breakdown;
   try {
-    parsed = JSON.parse(jsonText);
-  } catch {
-    throw new Error(`Failed to parse breakdown response. Response was: ${jsonText.slice(0, 500)}`);
+    parsed = parseBreakdownResponse(jsonText);
+  } catch (error) {
+    throw new Error(
+      `Failed to parse breakdown response. Response was: ${jsonText.slice(0, 500)}`
+    );
   }
 
   return {

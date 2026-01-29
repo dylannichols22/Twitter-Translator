@@ -11,14 +11,52 @@
       padding: 0;
     }
 
+    :root {
+      color-scheme: light dark;
+      --bg: #f5f7fb;
+      --bg-accent: #eef2f7;
+      --surface: #ffffff;
+      --surface-muted: #f9fafb;
+      --text: #0f1419;
+      --muted: #536471;
+      --border: #e3e8ee;
+      --border-strong: #cfd8df;
+      --accent: #1d9bf0;
+      --accent-strong: #1678c2;
+      --warning: #e65100;
+      --warning-bg: #fff4e5;
+      --shadow: 0 8px 24px rgba(15, 20, 25, 0.08);
+      --shadow-soft: 0 2px 10px rgba(15, 20, 25, 0.06);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c1117;
+        --bg-accent: #101821;
+        --surface: #141c26;
+        --surface-muted: #18212c;
+        --text: #f2f5f7;
+        --muted: #9aa6b2;
+        --border: #1f2a36;
+        --border-strong: #2b3a4a;
+        --accent: #4aa9ff;
+        --accent-strong: #72baff;
+        --warning: #ffb380;
+        --warning-bg: #2a1d12;
+        --shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+        --shadow-soft: 0 2px 10px rgba(0, 0, 0, 0.35);
+      }
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.5;
-      background: #f7f9f9;
-      color: #0f1419;
-      padding: 20px;
-      max-width: 700px;
+      font-family: "Manrope", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+      line-height: 1.6;
+      background: linear-gradient(180deg, var(--bg), var(--bg-accent));
+      color: var(--text);
+      padding: 24px;
+      max-width: 760px;
       margin: 0 auto;
+      overflow-x: hidden;
     }
 
     h1 {
@@ -29,7 +67,7 @@
     .header {
       margin-bottom: 24px;
       padding-bottom: 16px;
-      border-bottom: 1px solid #eff3f4;
+      border-bottom: 1px solid var(--border);
     }
 
     .hidden {
@@ -39,14 +77,14 @@
     #loading {
       text-align: center;
       padding: 40px;
-      color: #536471;
+      color: var(--muted);
     }
 
     #loading .spinner {
       width: 40px;
       height: 40px;
-      border: 3px solid #eff3f4;
-      border-top-color: #1d9bf0;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 1s linear infinite;
       margin: 0 auto 16px;
@@ -57,35 +95,37 @@
     }
 
     #error-message {
-      background: #fff4e5;
+      background: var(--warning-bg);
       border: 1px solid #ffb74d;
       border-radius: 8px;
       padding: 12px 16px;
-      color: #e65100;
+      color: var(--warning);
       margin-bottom: 16px;
     }
 
     #estimated-cost {
       font-size: 14px;
-      color: #536471;
+      color: var(--muted);
       margin-bottom: 16px;
     }
 
     .tweet-card {
-      background: white;
+      background: var(--surface);
       border-radius: 12px;
-      padding: 16px;
+      padding: 18px;
       margin-bottom: 12px;
-      border: 1px solid #eff3f4;
-      transition: box-shadow 0.2s;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-soft);
+      transition: box-shadow 0.2s, transform 0.2s;
     }
 
     .tweet-card:hover {
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      box-shadow: var(--shadow);
+      transform: translateY(-1px);
     }
 
     .tweet-card.main-post {
-      border-left: 4px solid #1d9bf0;
+      border-left: 4px solid var(--accent);
     }
 
     .tweet-header {
@@ -97,9 +137,9 @@
     }
 
     .tweet-header::after {
-      content: '▼';
-      font-size: 10px;
-      color: #536471;
+      content: "v";
+      font-size: 11px;
+      color: var(--muted);
       transition: transform 0.2s;
     }
 
@@ -109,59 +149,63 @@
 
     .tweet-author {
       font-weight: 600;
-      color: #0f1419;
+      color: var(--text);
     }
 
     .tweet-timestamp {
       font-size: 13px;
-      color: #536471;
+      color: var(--muted);
     }
 
     .tweet-translation {
       font-size: 16px;
       margin-bottom: 8px;
-      color: #0f1419;
+      color: var(--text);
       white-space: pre-wrap;
     }
 
     .tweet-original {
       font-size: 15px;
-      color: #536471;
+      color: var(--muted);
       padding-top: 8px;
-      border-top: 1px dashed #eff3f4;
+      border-top: 1px dashed var(--border);
       white-space: pre-wrap;
     }
 
     .tweet-breakdown {
       margin-top: 16px;
-      padding: 16px 20px;
-      background: #fafbfc;
-      border-radius: 8px;
-      /* Break out of card to be wider */
+      padding: 18px 22px;
+      background: var(--surface-muted);
+      border-radius: 12px;
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-soft);
+      width: fit-content;
+      max-width: 80vw;
       position: relative;
       left: 50%;
       transform: translateX(-50%);
-      width: calc(100vw - 40px);
-      max-width: 900px;
     }
 
     .breakdown-loading,
     .breakdown-error {
       padding: 20px;
       text-align: center;
-      color: #536471;
+      color: var(--muted);
       font-size: 14px;
     }
 
     .breakdown-error {
-      color: #e65100;
-      background: #fff4e5;
+      color: var(--warning);
+      background: var(--warning-bg);
       border-radius: 8px;
     }
 
     .segment-table-wrapper {
       overflow-x: auto;
       margin-bottom: 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
     }
 
     .segment-table {
@@ -172,36 +216,37 @@
     .segment-table td {
       padding: 8px 16px;
       text-align: center;
-      border: 1px solid #eff3f4;
+      border: 1px solid var(--border);
       white-space: nowrap;
     }
 
     .chinese-row td {
       font-size: 20px;
       font-weight: 500;
-      background: #f7f9f9;
+      background: var(--surface-muted);
     }
 
     .pinyin-row td {
       font-size: 14px;
-      color: #1d9bf0;
+      color: var(--accent);
       font-style: italic;
     }
 
     .gloss-row td {
       font-size: 13px;
-      color: #536471;
+      color: var(--muted);
     }
 
     .notes-section {
-      background: #f7f9f9;
-      border-radius: 8px;
+      background: var(--surface);
+      border-radius: 10px;
       padding: 12px 16px;
+      border: 1px solid var(--border);
     }
 
     .notes-section h4 {
       font-size: 13px;
-      color: #536471;
+      color: var(--muted);
       margin-bottom: 8px;
       text-transform: uppercase;
       letter-spacing: 0.5px;
@@ -219,24 +264,28 @@
     }
 
     .notes-section li::before {
-      content: '•';
+      content: "";
       position: absolute;
       left: 0;
-      color: #1d9bf0;
+      top: 10px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
     }
 
     .empty-notes {
       font-size: 14px;
-      color: #536471;
+      color: var(--muted);
       font-style: italic;
     }
 
     #tweets-container:empty::after {
-      content: 'No translations to display';
+      content: "No translations to display";
       display: block;
       text-align: center;
       padding: 40px;
-      color: #536471;
+      color: var(--muted);
     }
   </style>
 </head>

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../translator', () => ({
-  translateThread: vi.fn(),
+  translateQuickStreaming: vi.fn(),
 }));
 
-import { translateThread } from '../translator';
+import { translateQuickStreaming } from '../translator';
 
 type RuntimeListener = (
   message: unknown,
@@ -164,12 +164,15 @@ describe('End-to-end flow', () => {
       <div id="estimated-cost"></div>
     `;
 
-    vi.mocked(translateThread).mockResolvedValue({
-      translations: [
-        { id: '123', naturalTranslation: 'Hello', segments: [], notes: [] },
-      ],
-      usage: { inputTokens: 10, outputTokens: 20 },
-    });
+    vi.mocked(translateQuickStreaming).mockImplementation(
+      async (_tweets, _apiKey, callbacks) => {
+        callbacks.onTranslation({
+          id: '123',
+          naturalTranslation: 'Hello',
+        });
+        callbacks.onComplete({ inputTokens: 10, outputTokens: 20 });
+      }
+    );
 
     const translateView = new TranslateViewController();
     await translateView.translate();

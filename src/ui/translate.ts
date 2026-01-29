@@ -1,14 +1,11 @@
 import { MESSAGE_TYPES } from '../messages';
 import { translateQuickStreaming, getBreakdown } from '../translator';
-import type { QuickTranslation, Segment, Breakdown, UsageStats } from '../translator';
+import type { QuickTranslation, Segment, Breakdown, UsageStats, TranslatedTweet } from '../translator';
 import type { Tweet } from '../scraper';
 import { estimateCost, calculateCost } from '../cost';
 import { formatCost } from '../popup/popup';
 
-export function renderSegmentTable(segments: Segment[]): HTMLDivElement {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'segment-table-wrapper';
-
+export function renderSegmentTable(segments: Segment[]): HTMLTableElement {
   const table = document.createElement('table');
   table.className = 'segment-table';
 
@@ -36,8 +33,7 @@ export function renderSegmentTable(segments: Segment[]): HTMLDivElement {
     cell.textContent = seg.gloss;
   });
 
-  wrapper.appendChild(table);
-  return wrapper;
+  return table;
 }
 
 export function renderNotes(notes: string[]): HTMLDivElement {
@@ -74,11 +70,83 @@ function renderBreakdownContent(breakdown: Breakdown): DocumentFragment {
   const chunkSize = 8;
   for (let i = 0; i < breakdown.segments.length; i += chunkSize) {
     const chunk = breakdown.segments.slice(i, i + chunkSize);
-    fragment.appendChild(renderSegmentTable(chunk));
+    const wrapper = document.createElement('div');
+    wrapper.className = 'segment-table-wrapper';
+    wrapper.appendChild(renderSegmentTable(chunk));
+    fragment.appendChild(wrapper);
   }
 
   fragment.appendChild(renderNotes(breakdown.notes));
   return fragment;
+}
+
+export function renderTweet(
+  tweet: Tweet,
+  translation: QuickTranslation | TranslatedTweet,
+  onToggleBreakdown?: (article: HTMLElement, breakdown: HTMLElement) => void
+): HTMLElement {
+  const article = document.createElement('article');
+  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'}`;
+  article.dataset.tweetId = tweet.id;
+
+  // Header (clickable to expand)
+  const header = document.createElement('div');
+  header.className = 'tweet-header';
+
+  const author = document.createElement('span');
+  author.className = 'tweet-author';
+  author.textContent = tweet.author || 'Unknown';
+  header.appendChild(author);
+
+  const timestamp = document.createElement('span');
+  timestamp.className = 'tweet-timestamp';
+  if (tweet.timestamp) {
+    timestamp.textContent = new Date(tweet.timestamp).toLocaleString();
+  }
+  header.appendChild(timestamp);
+
+  article.appendChild(header);
+
+  // Translation
+  const translationEl = document.createElement('div');
+  translationEl.className = 'tweet-translation';
+  translationEl.textContent = translation.naturalTranslation;
+  article.appendChild(translationEl);
+
+  // Original text
+  const original = document.createElement('div');
+  original.className = 'tweet-original';
+  original.textContent = tweet.text;
+  article.appendChild(original);
+
+  // Breakdown container (initially hidden)
+  const breakdown = document.createElement('div');
+  breakdown.className = 'tweet-breakdown hidden';
+  article.appendChild(breakdown);
+
+  if ('segments' in translation && 'notes' in translation) {
+    const breakdownContent = renderBreakdownContent({
+      segments: translation.segments,
+      notes: translation.notes,
+    });
+    breakdown.appendChild(breakdownContent);
+  }
+
+  const defaultToggle = () => {
+    const isHidden = breakdown.classList.contains('hidden');
+    breakdown.classList.toggle('hidden', !isHidden);
+    article.classList.toggle('expanded', isHidden);
+  };
+
+  header.addEventListener('click', () => {
+    if (onToggleBreakdown) {
+      onToggleBreakdown(article, breakdown);
+      return;
+    }
+    defaultToggle();
+  });
+
+  return article;
 }
 
 export class TranslateViewController {
@@ -152,49 +220,9 @@ export class TranslateViewController {
   }
 
   private renderQuickTweet(tweet: Tweet, translation: QuickTranslation): HTMLElement {
-    const article = document.createElement('article');
-    article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'}`;
-    article.dataset.tweetId = tweet.id;
-
-    // Header (clickable to expand)
-    const header = document.createElement('div');
-    header.className = 'tweet-header';
-
-    const author = document.createElement('span');
-    author.className = 'tweet-author';
-    author.textContent = tweet.author || 'Unknown';
-    header.appendChild(author);
-
-    const timestamp = document.createElement('span');
-    timestamp.className = 'tweet-timestamp';
-    if (tweet.timestamp) {
-      timestamp.textContent = new Date(tweet.timestamp).toLocaleString();
-    }
-    header.appendChild(timestamp);
-
-    article.appendChild(header);
-
-    // Translation
-    const translationEl = document.createElement('div');
-    translationEl.className = 'tweet-translation';
-    translationEl.textContent = translation.naturalTranslation;
-    article.appendChild(translationEl);
-
-    // Original text
-    const original = document.createElement('div');
-    original.className = 'tweet-original';
-    original.textContent = tweet.text;
-    article.appendChild(original);
-
-    // Breakdown container (initially empty, loaded on demand)
-    const breakdown = document.createElement('div');
-    breakdown.className = 'tweet-breakdown hidden';
-    article.appendChild(breakdown);
-
-    // Click header to expand/collapse and load breakdown
-    header.addEventListener('click', () => this.toggleBreakdown(article, tweet, breakdown));
-
-    return article;
+    return renderTweet(tweet, translation, (article, breakdown) => {
+      void this.toggleBreakdown(article, tweet, breakdown);
+    });
   }
 
   private async toggleBreakdown(article: HTMLElement, tweet: Tweet, breakdownEl: HTMLElement): Promise<void> {
@@ -268,6 +296,30 @@ export class TranslateViewController {
       return;
     }
 
+    const cached = await browser.runtime.sendMessage({
+      type: MESSAGE_TYPES.GET_CACHED_TRANSLATION,
+      data: this.sourceUrl,
+    });
+
+    if (cached && this.tweetsContainer) {
+      const cachedResult = cached as {
+        translations: TranslatedTweet[];
+        usage: UsageStats;
+      };
+      this.tweetsContainer.innerHTML = '';
+      for (const translation of cachedResult.translations) {
+        const tweet = this.tweets.find((t) => t.id === translation.id);
+        if (tweet) {
+          const element = renderTweet(tweet, translation);
+          this.tweetsContainer.appendChild(element);
+        }
+      }
+      this.totalUsage = cachedResult.usage;
+      this.updateCostDisplay();
+      this.showLoading(false);
+      return;
+    }
+
     // Get API key
     const settings = await browser.runtime.sendMessage({
       type: MESSAGE_TYPES.GET_SETTINGS,
@@ -289,6 +341,7 @@ export class TranslateViewController {
     }
 
     this.totalUsage = { inputTokens: 0, outputTokens: 0 };
+    const cachedTranslations: TranslatedTweet[] = [];
 
     await translateQuickStreaming(this.tweets, this.apiKey, {
       onTranslation: (translation) => {
@@ -297,6 +350,12 @@ export class TranslateViewController {
           const element = this.renderQuickTweet(tweet, translation);
           this.tweetsContainer.appendChild(element);
         }
+        cachedTranslations.push({
+          id: translation.id,
+          naturalTranslation: translation.naturalTranslation,
+          segments: [],
+          notes: [],
+        });
         // Hide loading after first result
         this.showLoading(false);
       },
@@ -311,6 +370,17 @@ export class TranslateViewController {
           data: {
             inputTokens: usage.inputTokens,
             outputTokens: usage.outputTokens,
+          },
+        });
+
+        await browser.runtime.sendMessage({
+          type: MESSAGE_TYPES.CACHE_TRANSLATION,
+          data: {
+            url: this.sourceUrl,
+            translation: {
+              translations: cachedTranslations,
+              usage,
+            },
           },
         });
       },

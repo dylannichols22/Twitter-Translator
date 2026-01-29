@@ -2,17 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Tweet } from '../scraper';
 
 const mockCreate = vi.fn();
+const mockStream = vi.fn();
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: vi.fn().mockImplementation(() => ({
     messages: {
       create: mockCreate,
+      stream: mockStream,
     },
   })),
 }));
 
 // Import after mock setup
-import { translateThread } from './translator';
+import { translateThread, getBreakdown, translateQuickStreaming } from './translator';
 
 describe('Translator', () => {
   const mockTweets: Tweet[] = [
@@ -137,6 +139,70 @@ describe('Translator', () => {
           max_tokens: expect.any(Number),
         })
       );
+    });
+  });
+
+  describe('getBreakdown', () => {
+    it('recovers segments from truncated JSON response', async () => {
+      const truncated = `\`\`\`json
+{
+  "segments": [
+    { "chinese": "本來", "pinyin": "běnlái", "gloss": "originally" },
+    { "chinese": "就是", "pinyin": "jiùshì", "gloss": "is; that's it" }
+`;
+
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: truncated }],
+        usage: { input_tokens: 10, output_tokens: 20 },
+      });
+
+      const result = await getBreakdown('test', 'test-api-key');
+
+      expect(result.breakdown.segments).toHaveLength(2);
+      expect(result.breakdown.segments[0].chinese).toBe('本來');
+      expect(result.breakdown.notes).toEqual([]);
+    });
+  });
+
+  describe('translateQuickStreaming', () => {
+    it('falls back to non-stream response when stream fails', async () => {
+      mockStream.mockImplementation(() => {
+        throw new Error('Connection error');
+      });
+
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              translations: [
+                { id: '1', naturalTranslation: 'Hello from fallback' },
+              ],
+            }),
+          },
+        ],
+        usage: { input_tokens: 12, output_tokens: 34 },
+      });
+
+      const onTranslation = vi.fn();
+      const onComplete = vi.fn();
+      const onError = vi.fn();
+
+      await translateQuickStreaming([mockTweets[0]], 'test-api-key', {
+        onTranslation,
+        onComplete,
+        onError,
+      });
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(onTranslation).toHaveBeenCalledWith({
+        id: '1',
+        naturalTranslation: 'Hello from fallback',
+      });
+      expect(onComplete).toHaveBeenCalledWith({
+        inputTokens: 12,
+        outputTokens: 34,
+      });
     });
   });
 });

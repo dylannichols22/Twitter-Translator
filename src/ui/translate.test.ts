@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../translator', () => ({
-  translateThread: vi.fn(),
+  translateQuickStreaming: vi.fn(),
 }));
 
-import { translateThread } from '../translator';
+import { translateQuickStreaming } from '../translator';
 import {
   renderTweet,
   renderSegmentTable,
@@ -260,7 +260,7 @@ describe('Translation View', () => {
       const controller = new TranslateViewController();
       await controller.translate();
 
-      expect(translateThread).not.toHaveBeenCalled();
+      expect(translateQuickStreaming).not.toHaveBeenCalled();
       const error = document.getElementById('error-message');
       expect(error?.textContent).toContain('API key');
     });
@@ -293,7 +293,7 @@ describe('Translation View', () => {
       const controller = new TranslateViewController();
       await controller.translate();
 
-      expect(translateThread).not.toHaveBeenCalled();
+      expect(translateQuickStreaming).not.toHaveBeenCalled();
       const tweetsContainer = document.getElementById('tweets-container');
       expect(tweetsContainer?.textContent).toContain('Hello');
     });
@@ -323,12 +323,17 @@ describe('Translation View', () => {
         return { success: true };
       });
 
-      vi.mocked(translateThread).mockResolvedValue(result);
+      vi.mocked(translateQuickStreaming).mockImplementation(
+        async (_tweets, _apiKey, callbacks) => {
+          callbacks.onTranslation(result.translations[0]);
+          callbacks.onComplete(result.usage);
+        }
+      );
 
       const controller = new TranslateViewController();
       await controller.translate();
 
-      expect(translateThread).toHaveBeenCalled();
+      expect(translateQuickStreaming).toHaveBeenCalled();
       expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
         type: 'RECORD_USAGE',
         data: { inputTokens: 10, outputTokens: 20 },
@@ -367,7 +372,12 @@ describe('Translation View', () => {
         return { success: true };
       });
 
-      vi.mocked(translateThread).mockResolvedValue(result);
+      vi.mocked(translateQuickStreaming).mockImplementation(
+        async (_tweets, _apiKey, callbacks) => {
+          callbacks.onTranslation(result.translations[0]);
+          callbacks.onComplete(result.usage);
+        }
+      );
 
       const controller = new TranslateViewController();
       await controller.translate();
