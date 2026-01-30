@@ -158,6 +158,31 @@ describe('Content Script', () => {
       // GET_SETTINGS is not handled by content script's handleMessage
       expect(response).toBeUndefined();
     });
+
+    it('scrolls to load more when requested', async () => {
+      mockRuntime.sendMessage.mockResolvedValue({ commentLimit: 10 });
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <div data-testid="tweetText"><span>Main</span></div>
+        </article>
+      `;
+
+      const scrollSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {
+        const reply = document.createElement('article');
+        reply.setAttribute('data-testid', 'tweet');
+        reply.innerHTML = '<div data-testid="tweetText"><span>Reply</span></div>';
+        document.body.appendChild(reply);
+      });
+
+      const response = await handleMessage({
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: { scrollToLoadMore: true, commentLimit: 10, scrollMaxRounds: 2, scrollIdleRounds: 1 },
+      });
+
+      expect(response?.success).toBe(true);
+      expect(scrollSpy).toHaveBeenCalled();
+      scrollSpy.mockRestore();
+    });
   });
 
   describe('ContentScriptHandler', () => {

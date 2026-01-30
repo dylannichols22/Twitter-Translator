@@ -181,6 +181,9 @@ describe('Background Script', () => {
           url: 'https://twitter.com/user/status/1',
           commentLimit: 5,
           excludeIds: ['1'],
+          scrollToLoadMore: true,
+          scrollMaxRounds: 6,
+          scrollIdleRounds: 2,
         },
       };
 
@@ -191,6 +194,9 @@ describe('Background Script', () => {
         data: {
           commentLimit: 5,
           excludeIds: ['1'],
+          scrollToLoadMore: true,
+          scrollMaxRounds: 6,
+          scrollIdleRounds: 2,
         },
       });
       expect(result).toEqual({ success: true, tweets: [] });

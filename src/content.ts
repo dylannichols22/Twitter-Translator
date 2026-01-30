@@ -165,6 +165,34 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
       }
     }
 
+    if (options.scrollToLoadMore && options.commentLimit) {
+      const targetTotal = options.commentLimit + 1;
+      if (getTweetCount() < targetTotal) {
+        const maxRounds = options.scrollMaxRounds ?? 6;
+        const idleLimit = options.scrollIdleRounds ?? 2;
+        let idleRounds = 0;
+        let lastCount = getTweetCount();
+
+        for (let round = 0; round < maxRounds && getTweetCount() < targetTotal; round += 1) {
+          window.scrollTo(0, document.body.scrollHeight);
+          await waitForDomStability(5000, 350);
+          const currentCount = getTweetCount();
+
+          if (currentCount <= lastCount) {
+            idleRounds += 1;
+            if (idleRounds >= idleLimit) {
+              break;
+            }
+          } else {
+            idleRounds = 0;
+            lastCount = currentCount;
+          }
+
+          await sleep(150);
+        }
+      }
+    }
+
     // Get comment limit from settings
     const settings = await browser.runtime.sendMessage({
       type: MESSAGE_TYPES.GET_SETTINGS,

@@ -180,6 +180,9 @@ export async function handleMessage(
         threadUrl?: string;
         commentLimit?: number;
         excludeIds?: string[];
+        scrollToLoadMore?: boolean;
+        scrollMaxRounds?: number;
+        scrollIdleRounds?: number;
       };
 
       if (message.type === MESSAGE_TYPES.SCRAPE_CHILD_REPLIES && data.threadUrl) {
@@ -200,6 +203,9 @@ export async function handleMessage(
         data: {
           commentLimit: data.commentLimit,
           excludeIds: data.excludeIds,
+          scrollToLoadMore: data.scrollToLoadMore,
+          scrollMaxRounds: data.scrollMaxRounds,
+          scrollIdleRounds: data.scrollIdleRounds,
         },
       });
     }

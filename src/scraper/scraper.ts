@@ -19,6 +19,9 @@ export interface ScrapeOptions {
   commentLimit?: number;
   excludeIds?: string[];
   expandReplies?: boolean;
+  scrollToLoadMore?: boolean;
+  scrollMaxRounds?: number;
+  scrollIdleRounds?: number;
 }
 
 export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
