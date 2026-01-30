@@ -749,6 +749,75 @@ describe('Translation View', () => {
         expect.objectContaining({ type: 'OPEN_TRANSLATE_PAGE' })
       );
     });
+
+    it('shows a full-page loading overlay while navigating replies', async () => {
+      document.body.innerHTML = `
+        <div id="tweets-container"></div>
+        <div id="loading"></div>
+        <div id="error-message"></div>
+        <div id="estimated-cost"></div>
+        <button class="nav-back" type="button"></button>
+        <button id="load-more-btn"></button>
+      `;
+
+      const tweetData = {
+        tweets: [
+          { id: '1', text: 'Main post', author: 'Main', timestamp: '', isMainPost: true },
+          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, url: 'https://twitter.com/user/status/2' },
+        ],
+        url: 'https://twitter.com/user/status/1',
+        sourceTabId: 99,
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      let resolveNavigate: ((value: unknown) => void) | undefined;
+      const navigatePromise = new Promise((resolve) => {
+        resolveNavigate = resolve;
+      });
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
+        if (message.type === 'NAVIGATE_AND_SCRAPE') return navigatePromise;
+        return { success: true };
+      });
+
+      vi.mocked(translateQuickStreaming).mockImplementation(
+        async (tweets, _apiKey, callbacks) => {
+          tweets.forEach((tweet) => {
+            callbacks.onTranslation({ id: tweet.id, naturalTranslation: `T-${tweet.id}` });
+          });
+          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
+        }
+      );
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      const loadChildButton = document.querySelector('.tweet-load-children');
+      loadChildButton?.dispatchEvent(new Event('click'));
+
+      expect(document.body.classList.contains('loading-overlay')).toBe(true);
+
+      resolveNavigate?.({
+        success: true,
+        tweets: [
+          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
+          { id: '3', text: 'Child reply', author: 'Child', timestamp: '', isMainPost: false },
+        ],
+        url: 'https://twitter.com/user/status/2',
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(document.body.classList.contains('loading-overlay')).toBe(false);
+    });
   });
 });
 

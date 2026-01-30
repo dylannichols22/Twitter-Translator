@@ -549,6 +549,13 @@ export class TranslateViewController {
     this.loadMoreBtn.classList.toggle('hidden', !show);
   }
 
+  private showOverlayLoading(show: boolean): void {
+    if (this.loadingEl) {
+      this.loadingEl.classList.toggle('hidden', !show);
+    }
+    document.body?.classList.toggle('loading-overlay', show);
+  }
+
   private updateBackButton(): void {
     if (!this.backBtn) return;
     this.backBtn.disabled = this.historyStack.length === 0;
@@ -744,6 +751,7 @@ export class TranslateViewController {
       const replyLimit = this.commentLimit > 0 ? this.commentLimit : undefined;
 
       this.pushHistory();
+      this.showOverlayLoading(true);
 
       const response = await browser.runtime.sendMessage({
         type: MESSAGE_TYPES.NAVIGATE_AND_SCRAPE,
@@ -758,6 +766,7 @@ export class TranslateViewController {
         this.showError(response?.error || 'Failed to open reply thread');
         this.historyStack.pop();
         this.updateBackButton();
+        this.showOverlayLoading(false);
         this.isLoadingMore = false;
         return;
       }
@@ -768,6 +777,7 @@ export class TranslateViewController {
         this.showError('No replies to show');
         this.historyStack.pop();
         this.updateBackButton();
+        this.showOverlayLoading(false);
         this.isLoadingMore = false;
         return;
       }
@@ -779,6 +789,7 @@ export class TranslateViewController {
       this.setThreadData(responseTweets, response.url || parentTweet.url);
       this.showLoadMore(true);
       await this.translate();
+      this.showOverlayLoading(false);
       this.isLoadingMore = false;
       return;
     }

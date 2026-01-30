@@ -25,6 +25,7 @@
       --accent-strong: #1a8cd8;
       --warning: #b45309;
       --warning-bg: #fef3c7;
+      --overlay: rgba(255, 255, 255, 0.78);
     }
 
     @media (prefers-color-scheme: dark) {
@@ -41,6 +42,7 @@
         --accent-strong: #1a8cd8;
         --warning: #f59e0b;
         --warning-bg: #1f1406;
+        --overlay: rgba(0, 0, 0, 0.65);
       }
     }
 
@@ -125,6 +127,20 @@
       padding: 32px 16px;
       color: var(--muted);
       border-bottom: 1px solid var(--border);
+    }
+
+    body.loading-overlay #loading {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      background: var(--overlay);
+      border-bottom: none;
+      z-index: 2000;
+      backdrop-filter: blur(2px);
     }
 
     #loading .spinner {
