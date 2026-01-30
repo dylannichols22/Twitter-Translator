@@ -90,6 +90,26 @@ describe('Content Script', () => {
       expect(response?.tweets?.[1].text).toBe('Reply');
     });
 
+    it('returns existing replies quickly when already rendered', async () => {
+      mockRuntime.sendMessage.mockResolvedValue({ commentLimit: 10 });
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <div data-testid="tweetText"><span>Main</span></div>
+        </article>
+        <article data-testid="tweet">
+          <div data-testid="tweetText"><span>Reply</span></div>
+        </article>
+      `;
+
+      const response = await handleMessage({
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: { expandReplies: true },
+      });
+
+      expect(response?.success).toBe(true);
+      expect(response?.tweets).toHaveLength(2);
+    });
+
     it('passes scrape options from message data', async () => {
       document.body.innerHTML = `
         <article data-testid="tweet">

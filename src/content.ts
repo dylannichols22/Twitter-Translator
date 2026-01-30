@@ -31,6 +31,9 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
 
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+    const getTweetCount = () => document.querySelectorAll('article[data-testid="tweet"]').length;
+    const getCellCount = () => document.querySelectorAll('[data-testid="cellInnerDiv"]').length;
+
     const waitForCondition = async (
       predicate: () => boolean,
       timeoutMs = 8000,
@@ -42,9 +45,6 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
         await sleep(intervalMs);
       }
     };
-
-    const getTweetCount = () => document.querySelectorAll('article[data-testid="tweet"]').length;
-    const getCellCount = () => document.querySelectorAll('[data-testid="cellInnerDiv"]').length;
 
     const waitForStableCounts = async (
       timeoutMs = 8000,
@@ -79,6 +79,52 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
       }
     };
 
+    const waitForDomStability = async (
+      timeoutMs = 6000,
+      stableMs = 400
+    ): Promise<void> => {
+      if (getTweetCount() === 0) {
+        return;
+      }
+
+      const start = Date.now();
+      let lastTweetCount = getTweetCount();
+      let lastCellCount = getCellCount();
+      let lastChange = Date.now();
+
+      return await new Promise<void>((resolve) => {
+        const observer = new MutationObserver(() => {
+          const tweetCount = getTweetCount();
+          const cellCount = getCellCount();
+          if (tweetCount !== lastTweetCount || cellCount !== lastCellCount) {
+            lastTweetCount = tweetCount;
+            lastCellCount = cellCount;
+            lastChange = Date.now();
+          }
+        });
+
+        observer.observe(document.body, { childList: true, subtree: true });
+
+        const tick = async () => {
+          const now = Date.now();
+          if (now - start >= timeoutMs) {
+            observer.disconnect();
+            resolve();
+            return;
+          }
+          if (now - lastChange >= stableMs && lastTweetCount > 0) {
+            observer.disconnect();
+            resolve();
+            return;
+          }
+          await sleep(100);
+          void tick();
+        };
+
+        void tick();
+      });
+    };
+
     await waitForCondition(() => getTweetCount() > 0);
 
     if (options.expandReplies) {
@@ -106,16 +152,16 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
           3500,
           200
         );
-      } else {
-        await sleep(350);
+      } else if (initialTweetCount <= 1) {
+        await sleep(250);
       }
 
-      await waitForStableCounts(6000, 600, 200);
+      await waitForDomStability(5000, 350);
 
       if (getTweetCount() <= 1) {
         await sleep(800);
         clickShowReplies();
-        await waitForStableCounts(6000, 600, 200);
+        await waitForDomStability(6000, 400);
       }
     }
 
