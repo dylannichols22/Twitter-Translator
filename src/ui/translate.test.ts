@@ -620,12 +620,13 @@ describe('Translation View', () => {
     });
 
 
-    it('opens a new translate tab for reply threads', async () => {
+    it('navigates the source tab for reply threads when available', async () => {
       document.body.innerHTML = `
         <div id="tweets-container"></div>
         <div id="loading"></div>
         <div id="error-message"></div>
         <div id="estimated-cost"></div>
+        <button class="nav-back" type="button"></button>
         <button id="load-more-btn"></button>
       `;
 
@@ -635,6 +636,7 @@ describe('Translation View', () => {
           { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, url: 'https://twitter.com/user/status/2' },
         ],
         url: 'https://twitter.com/user/status/1',
+        sourceTabId: 99,
       };
 
       Object.defineProperty(window, 'location', {
@@ -646,7 +648,7 @@ describe('Translation View', () => {
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string; data?: unknown }) => {
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
         if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
-        if (message.type === 'SCRAPE_CHILD_REPLIES') {
+        if (message.type === 'NAVIGATE_AND_SCRAPE') {
           return {
             success: true,
             tweets: [
@@ -655,9 +657,6 @@ describe('Translation View', () => {
             ],
             url: 'https://twitter.com/user/status/1',
           };
-        }
-        if (message.type === 'OPEN_TRANSLATE_PAGE') {
-          return { success: true };
         }
         return { success: true };
       });
@@ -679,24 +678,13 @@ describe('Translation View', () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
-        type: 'SCRAPE_CHILD_REPLIES',
+        type: 'NAVIGATE_AND_SCRAPE',
         data: expect.objectContaining({
-          threadUrl: 'https://twitter.com/user/status/2',
+          url: 'https://twitter.com/user/status/2',
         }),
       });
 
-      expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
-        type: 'OPEN_TRANSLATE_PAGE',
-        data: {
-          tweets: [
-            { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
-            { id: '3', text: 'Child reply', author: 'Child', timestamp: '', isMainPost: false },
-          ],
-          url: 'https://twitter.com/user/status/2',
-        },
-      });
-
-      expect(translateQuickStreaming).toHaveBeenCalledTimes(1);
+      expect(translateQuickStreaming).toHaveBeenCalledTimes(2);
     });
 
 
@@ -706,6 +694,7 @@ describe('Translation View', () => {
         <div id="loading"></div>
         <div id="error-message"></div>
         <div id="estimated-cost"></div>
+        <button class="nav-back" type="button"></button>
         <button id="load-more-btn"></button>
       `;
 
@@ -715,6 +704,7 @@ describe('Translation View', () => {
           { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, hasReplies: true, url: 'https://twitter.com/user/status/2' },
         ],
         url: 'https://twitter.com/user/status/1',
+        sourceTabId: 99,
       };
 
       Object.defineProperty(window, 'location', {
@@ -726,7 +716,7 @@ describe('Translation View', () => {
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
         if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
-        if (message.type === 'SCRAPE_CHILD_REPLIES') {
+        if (message.type === 'NAVIGATE_AND_SCRAPE') {
           return {
             success: true,
             tweets: [

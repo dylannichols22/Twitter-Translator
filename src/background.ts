@@ -50,6 +50,7 @@ export async function handleContextMenuClick(
         data: JSON.stringify({
           tweets: response.tweets,
           url: tab.url || response.url,
+          sourceTabId: tab.id,
         }),
       });
 
@@ -114,7 +115,7 @@ export async function handleMessage(
 
   switch (message.type) {
     case MESSAGE_TYPES.OPEN_TRANSLATE_PAGE: {
-      const data = message.data as { tweets: unknown[]; url: string };
+      const data = message.data as { tweets: unknown[]; url: string; sourceTabId?: number };
       const params = new URLSearchParams({
         data: JSON.stringify(data),
       });
@@ -199,6 +200,40 @@ export async function handleMessage(
         data: {
           commentLimit: data.commentLimit,
           excludeIds: data.excludeIds,
+        },
+      });
+    }
+
+    case MESSAGE_TYPES.NAVIGATE_TAB: {
+      const data = message.data as { tabId?: number; url: string };
+      if (!data.tabId) {
+        return { success: false, error: 'Source tab not found' };
+      }
+      await browser.tabs.update(data.tabId, { url: data.url });
+      return { success: true };
+    }
+
+    case MESSAGE_TYPES.NAVIGATE_AND_SCRAPE: {
+      const data = message.data as {
+        tabId?: number;
+        url: string;
+        commentLimit?: number;
+        excludeIds?: string[];
+      };
+
+      if (!data.tabId) {
+        return { success: false, error: 'Source tab not found' };
+      }
+
+      await browser.tabs.update(data.tabId, { url: data.url });
+      await waitForTabComplete(data.tabId);
+
+      return await browser.tabs.sendMessage(data.tabId, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: {
+          commentLimit: data.commentLimit,
+          excludeIds: data.excludeIds,
+          expandReplies: true,
         },
       });
     }

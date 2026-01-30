@@ -215,9 +215,12 @@ export class TranslateViewController {
   private errorEl: HTMLElement | null;
   private estimatedCostEl: HTMLElement | null;
   private loadMoreBtn: HTMLButtonElement | null;
+  private backBtn: HTMLButtonElement | null;
   private tweets: Tweet[] = [];
   private sourceUrl = '';
   private apiKey = '';
+  private sourceTabId: number | null = null;
+  private historyStack: Array<{ tweets: Tweet[]; url: string; scrollTop: number }> = [];
   private totalUsage: UsageStats = { inputTokens: 0, outputTokens: 0 };
   private translatedIds: Set<string> = new Set();
   private knownTweetIds: Set<string> = new Set();
@@ -235,6 +238,7 @@ export class TranslateViewController {
     this.errorEl = document.getElementById('error-message');
     this.estimatedCostEl = document.getElementById('estimated-cost');
     this.loadMoreBtn = document.getElementById('load-more-btn') as HTMLButtonElement | null;
+    this.backBtn = document.querySelector('.nav-back') as HTMLButtonElement | null;
 
     this.parseUrlParams();
     this.initializeControls();
@@ -248,6 +252,7 @@ export class TranslateViewController {
         const data = JSON.parse(decodeURIComponent(dataStr));
         this.tweets = data.tweets || [];
         this.sourceUrl = data.url || '';
+        this.sourceTabId = typeof data.sourceTabId === 'number' ? data.sourceTabId : null;
         this.tweets.forEach((tweet) => {
           if (tweet.id) {
             this.knownTweetIds.add(tweet.id);
@@ -264,6 +269,12 @@ export class TranslateViewController {
       this.loadMoreBtn.addEventListener('click', () => {
         void this.loadMoreReplies();
       });
+    }
+    if (this.backBtn) {
+      this.backBtn.addEventListener('click', () => {
+        void this.goBack();
+      });
+      this.updateBackButton();
     }
   }
 
@@ -524,6 +535,60 @@ export class TranslateViewController {
     this.loadMoreBtn.classList.toggle('hidden', !show);
   }
 
+  private updateBackButton(): void {
+    if (!this.backBtn) return;
+    this.backBtn.disabled = this.historyStack.length === 0;
+    this.backBtn.classList.toggle('disabled', this.historyStack.length === 0);
+  }
+
+  private resetTranslationState(): void {
+    this.totalUsage = { inputTokens: 0, outputTokens: 0 };
+    this.translatedIds.clear();
+    this.cachedTranslations = [];
+    this.breakdownCache.clear();
+    this.currentlyExpanded = null;
+  }
+
+  private setThreadData(tweets: Tweet[], url: string): void {
+    this.tweets = tweets;
+    this.sourceUrl = url;
+    this.knownTweetIds = new Set(tweets.map((tweet) => tweet.id));
+  }
+
+  private pushHistory(): void {
+    const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
+    this.historyStack.push({
+      tweets: this.tweets,
+      url: this.sourceUrl,
+      scrollTop,
+    });
+    this.updateBackButton();
+  }
+
+  private async goBack(): Promise<void> {
+    const previous = this.historyStack.pop();
+    if (!previous) return;
+
+    if (this.sourceTabId) {
+      await browser.runtime.sendMessage({
+        type: MESSAGE_TYPES.NAVIGATE_TAB,
+        data: { tabId: this.sourceTabId, url: previous.url },
+      });
+    }
+
+    this.updateBackButton();
+    this.resetTranslationState();
+    if (this.tweetsContainer) {
+      this.tweetsContainer.innerHTML = '';
+    }
+    this.setThreadData(previous.tweets, previous.url);
+    await this.translate();
+
+    requestAnimationFrame(() => {
+      window.scrollTo(0, previous.scrollTop);
+    });
+  }
+
   private mergeTweets(newTweets: Tweet[]): void {
     newTweets.forEach((tweet) => {
       if (!this.knownTweetIds.has(tweet.id)) {
@@ -657,6 +722,50 @@ export class TranslateViewController {
 
     if (!parentTweet.url) {
       this.showError('No reply thread available for this post');
+      return;
+    }
+
+    if (this.sourceTabId) {
+      this.isLoadingMore = true;
+      const replyLimit = this.commentLimit > 0 ? this.commentLimit : undefined;
+
+      this.pushHistory();
+
+      const response = await browser.runtime.sendMessage({
+        type: MESSAGE_TYPES.NAVIGATE_AND_SCRAPE,
+        data: {
+          tabId: this.sourceTabId,
+          url: parentTweet.url,
+          commentLimit: replyLimit,
+        },
+      });
+
+      if (!response?.success || !response.tweets) {
+        this.showError(response?.error || 'Failed to open reply thread');
+        this.historyStack.pop();
+        this.updateBackButton();
+        this.isLoadingMore = false;
+        return;
+      }
+
+      const responseTweets = response.tweets as Tweet[];
+      const childReplies = responseTweets.filter((tweet) => !tweet.isMainPost);
+      if (responseTweets.length === 0 || childReplies.length === 0) {
+        this.showError('No replies to show');
+        this.historyStack.pop();
+        this.updateBackButton();
+        this.isLoadingMore = false;
+        return;
+      }
+
+      this.resetTranslationState();
+      if (this.tweetsContainer) {
+        this.tweetsContainer.innerHTML = '';
+      }
+      this.setThreadData(responseTweets, response.url || parentTweet.url);
+      this.showLoadMore(true);
+      await this.translate();
+      this.isLoadingMore = false;
       return;
     }
 

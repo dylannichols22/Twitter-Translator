@@ -13,6 +13,7 @@ const mockTabs = {
   query: vi.fn(),
   sendMessage: vi.fn(),
   remove: vi.fn(),
+  update: vi.fn(),
   onUpdated: {
     addListener: vi.fn(),
     removeListener: vi.fn(),
@@ -249,6 +250,53 @@ describe('Background Script', () => {
       expect(mockTabs.remove).toHaveBeenCalledWith(456);
       expect(result).toEqual({ success: true, tweets: [] });
     });
+
+    it('navigates and scrapes in the source tab', async () => {
+      mockTabs.update.mockResolvedValue({ id: 789 });
+      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
+      mockTabs.onUpdated.addListener.mockImplementation((listener: (tabId: number, info: { status?: string }) => void) => {
+        listener(789, { status: 'complete' });
+      });
+
+      const message: Message = {
+        type: MESSAGE_TYPES.NAVIGATE_AND_SCRAPE,
+        data: {
+          tabId: 789,
+          url: 'https://twitter.com/user/status/2',
+          commentLimit: 5,
+        },
+      };
+
+      const result = await handleMessage(message, {}, vi.fn());
+
+      expect(mockTabs.update).toHaveBeenCalledWith(789, { url: 'https://twitter.com/user/status/2' });
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(789, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: {
+          commentLimit: 5,
+          excludeIds: undefined,
+          expandReplies: true,
+        },
+      });
+      expect(result).toEqual({ success: true, tweets: [] });
+    });
+
+    it('navigates source tab without scraping', async () => {
+      mockTabs.update.mockResolvedValue({ id: 321 });
+
+      const message: Message = {
+        type: MESSAGE_TYPES.NAVIGATE_TAB,
+        data: {
+          tabId: 321,
+          url: 'https://twitter.com/user/status/3',
+        },
+      };
+
+      const result = await handleMessage(message, {}, vi.fn());
+
+      expect(mockTabs.update).toHaveBeenCalledWith(321, { url: 'https://twitter.com/user/status/3' });
+      expect(result).toEqual({ success: true });
+    });
   });
 
   describe('MESSAGE_TYPES', () => {
@@ -259,6 +307,8 @@ describe('Background Script', () => {
       expect(MESSAGE_TYPES.SAVE_SETTINGS).toBeDefined();
       expect(MESSAGE_TYPES.SCRAPE_MORE).toBeDefined();
       expect(MESSAGE_TYPES.SCRAPE_CHILD_REPLIES).toBeDefined();
+      expect(MESSAGE_TYPES.NAVIGATE_AND_SCRAPE).toBeDefined();
+      expect(MESSAGE_TYPES.NAVIGATE_TAB).toBeDefined();
     });
   });
 });

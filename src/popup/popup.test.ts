@@ -186,6 +186,7 @@ describe('Popup', () => {
           data: {
             tweets: [{ id: '1', text: 'test', author: 'a', timestamp: '', isMainPost: true }],
             url: 'https://twitter.com/user/status/1',
+            sourceTabId: 123,
           },
         });
       });

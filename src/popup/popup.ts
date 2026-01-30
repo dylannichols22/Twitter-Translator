@@ -124,6 +124,7 @@ export class PopupController {
         data: {
           tweets: response.tweets,
           url: response.url || tab.url || '',
+          sourceTabId: tab.id,
         },
       });
 
