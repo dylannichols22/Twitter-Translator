@@ -81,6 +81,18 @@ function renderBreakdownContent(breakdown: Breakdown): DocumentFragment {
   return fragment;
 }
 
+const getGutterClass = (tweet: Tweet): string => {
+  const hasGroupStart = typeof tweet.groupStart === 'boolean';
+  const hasGroupEnd = typeof tweet.groupEnd === 'boolean';
+  if (!hasGroupStart && !hasGroupEnd) return '';
+  const start = tweet.groupStart ?? false;
+  const end = tweet.groupEnd ?? false;
+  if (start && end) return 'gutter-single';
+  if (start) return 'gutter-start';
+  if (end) return 'gutter-end';
+  return 'gutter-middle';
+};
+
 export function renderTweet(
   tweet: Tweet,
   translation: QuickTranslation | TranslatedTweet,
@@ -91,7 +103,10 @@ export function renderTweet(
   const inlineClass = tweet.inlineReply ? 'inline-reply' : '';
   const hasRepliesClass = tweet.hasReplies ? 'has-replies' : '';
   const isReplyClass = !tweet.isMainPost ? 'is-reply' : '';
-  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'} ${inlineClass} ${hasRepliesClass} ${isReplyClass}`.trim().replace(/\s+/g, ' ');
+  const groupStartClass = tweet.groupStart ? 'group-start' : '';
+  const groupEndClass = tweet.groupEnd ? 'group-end' : '';
+  const gutterClass = getGutterClass(tweet);
+  article.className = `tweet-card ${tweet.isMainPost ? 'main-post' : 'reply'} ${inlineClass} ${hasRepliesClass} ${isReplyClass} ${groupStartClass} ${groupEndClass} ${gutterClass}`.trim().replace(/\s+/g, ' ');
   article.dataset.tweetId = tweet.id;
 
   // Header (clickable to expand)

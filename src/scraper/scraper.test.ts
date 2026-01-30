@@ -127,6 +127,12 @@ describe('Twitter Scraper', () => {
     });
 
     it('extracts tweet ID from article or link', () => {
+      Object.defineProperty(window, 'location', {
+        value: { origin: 'https://twitter.com' },
+        writable: true,
+        configurable: true,
+      });
+
       document.body.innerHTML = `
         <article data-testid="tweet" aria-labelledby="id__123">
           <a href="/user/status/1234567890">
@@ -138,6 +144,7 @@ describe('Twitter Scraper', () => {
 
       const result = scrapeTweets();
       expect(result.tweets[0].id).toBe('1234567890');
+      expect(result.tweets[0].url).toBe('https://twitter.com/user/status/1234567890');
     });
     it('filters out excluded tweet IDs', () => {
       document.body.innerHTML = `
@@ -156,24 +163,81 @@ describe('Twitter Scraper', () => {
       expect(result.tweets[0].id).toBe('111');
     });
 
-    it('returns child replies for a parent ID', () => {
+
+    it('detects replies count for tweet', () => {
       document.body.innerHTML = `
         <article data-testid="tweet">
-          <a href="/user/status/100"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
-          <div data-testid="tweetText"><span>主帖</span></div>
-        </article>
-        <article data-testid="tweet">
-          <a href="/user/status/100">Replying to</a>
-          <a href="/user/status/101"><time datetime="2024-01-15T10:31:00.000Z">Jan 15</time></a>
-          <div data-testid="tweetText"><span>回复1</span></div>
+          <a href="/user/status/200"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>ä¸»å¸–</span></div>
+          <div data-testid="reply" aria-label="2 Replies"></div>
         </article>
       `;
 
-      const result = scrapeTweets({ parentId: '100' });
-      expect(result.tweets).toHaveLength(1);
-      expect(result.tweets[0].id).toBe('101');
-      expect(result.tweets[0].parentId).toBe('100');
-      expect(result.tweets[0].depth).toBe(1);
+      const result = scrapeTweets();
+      expect(result.tweets[0].hasReplies).toBe(true);
+    });
+
+    it('marks inline replies when preceded by a show replies cell', () => {
+      document.body.innerHTML = `
+        <div data-testid="cellInnerDiv">
+          <button type="button">Show replies</button>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <a href="/user/status/300"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+            <div data-testid="tweetText"><span>Inline reply</span></div>
+          </article>
+        </div>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets[0].inlineReply).toBe(true);
+    });
+
+    it('marks no replies when reply count is zero', () => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <a href="/user/status/201"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>ä¸»å¸–</span></div>
+          <div data-testid="reply" aria-label="0 Replies"></div>
+        </article>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets[0].hasReplies).toBe(false);
+    });
+
+    it('marks group boundaries when non-tweet rows separate replies', () => {
+      document.body.innerHTML = `
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <div data-testid="tweetText"><span>First</span></div>
+          </article>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <div data-testid="tweetText"><span>Second</span></div>
+          </article>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <button type="button">Show replies</button>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <div data-testid="tweetText"><span>Third</span></div>
+          </article>
+        </div>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets).toHaveLength(3);
+      expect(result.tweets[0].groupStart).toBe(true);
+      expect(result.tweets[0].groupEnd).toBe(false);
+      expect(result.tweets[1].groupStart).toBe(false);
+      expect(result.tweets[1].groupEnd).toBe(true);
+      expect(result.tweets[2].groupStart).toBe(true);
+      expect(result.tweets[2].groupEnd).toBe(true);
     });
   });
 });
+

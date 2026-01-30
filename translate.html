@@ -151,12 +151,16 @@
       background: var(--surface);
       padding: 16px;
       border-bottom: 1px solid var(--border);
+      position: relative;
+      --gutter-left: 36px;
+      --gutter-top: 68px;
       transition: background 0.2s;
     }
 
     .tweet-card.inline-reply {
       margin-left: 28px;
       border-left: 2px solid var(--border);
+      --gutter-left: 8px;
       padding-left: 14px;
     }
 
@@ -537,37 +541,33 @@
     }
 
     /* Reply Thread Connectors */
-    .tweet-card.has-replies {
-      position: relative;
+    .tweet-card.group-start {
+      border-top: 1px solid var(--border);
     }
 
-    .tweet-card.has-replies::after {
+    .tweet-card.gutter-start::after,
+    .tweet-card.gutter-middle::after,
+    .tweet-card.gutter-end::after {
       content: '';
       position: absolute;
-      left: 36px;
-      top: 68px;
+      left: var(--gutter-left);
+      width: 2px;
+      background: var(--border);
+    }
+
+    .tweet-card.gutter-start::after {
+      top: var(--gutter-top);
       bottom: 0;
-      width: 2px;
-      background: var(--border);
     }
 
-    .tweet-card.is-reply {
-      position: relative;
-    }
-
-    .tweet-card.is-reply::before {
-      content: '';
-      position: absolute;
-      left: 36px;
+    .tweet-card.gutter-middle::after {
       top: 0;
-      height: 16px;
-      width: 2px;
-      background: var(--border);
+      bottom: 0;
     }
 
-    .tweet-card.inline-reply::before {
-      left: 8px;
-      height: 28px;
+    .tweet-card.gutter-end::after {
+      top: 0;
+      height: var(--gutter-top);
     }
 
     /* Hover Micro-interactions */

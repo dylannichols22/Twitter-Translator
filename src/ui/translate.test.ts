@@ -229,6 +229,28 @@ describe('Translation View', () => {
       const element = renderTweet(mockTweet, mockTranslation);
       expect(element.classList.contains('is-reply')).toBe(false);
     });
+
+    it('adds gutter classes based on group boundaries', () => {
+      const startTweet = { ...mockTweet, groupStart: true, groupEnd: false };
+      const startElement = renderTweet(startTweet, mockTranslation);
+      expect(startElement.classList.contains('gutter-start')).toBe(true);
+      expect(startElement.classList.contains('gutter-end')).toBe(false);
+
+      const middleTweet = { ...mockTweet, groupStart: false, groupEnd: false };
+      const middleElement = renderTweet(middleTweet, mockTranslation);
+      expect(middleElement.classList.contains('gutter-middle')).toBe(true);
+
+      const endTweet = { ...mockTweet, groupStart: false, groupEnd: true };
+      const endElement = renderTweet(endTweet, mockTranslation);
+      expect(endElement.classList.contains('gutter-end')).toBe(true);
+      expect(endElement.classList.contains('gutter-start')).toBe(false);
+    });
+
+    it('uses gutter-single when a group has only one tweet', () => {
+      const singleTweet = { ...mockTweet, groupStart: true, groupEnd: true };
+      const element = renderTweet(singleTweet, mockTranslation);
+      expect(element.classList.contains('gutter-single')).toBe(true);
+    });
   });
 
   describe('TranslateViewController', () => {
