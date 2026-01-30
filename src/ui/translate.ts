@@ -186,10 +186,24 @@ export function renderTweet(
     defaultToggle();
   });
 
-  if (!tweet.isMainPost && tweet.hasReplies !== false) {
-    const actions = document.createElement('div');
-    actions.className = 'tweet-actions';
+  const actions = document.createElement('div');
+  actions.className = 'tweet-actions';
 
+  const breakdownToggle = document.createElement('button');
+  breakdownToggle.className = 'tweet-action-btn tweet-breakdown-toggle';
+  breakdownToggle.type = 'button';
+  breakdownToggle.textContent = 'Breakdown';
+  breakdownToggle.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (onToggleBreakdown) {
+      onToggleBreakdown(article, breakdown);
+      return;
+    }
+    defaultToggle();
+  });
+  actions.appendChild(breakdownToggle);
+
+  if (!tweet.isMainPost && tweet.hasReplies !== false) {
     const loadChildren = document.createElement('button');
     loadChildren.className = 'tweet-action-btn tweet-load-children';
     loadChildren.type = 'button';
@@ -198,10 +212,10 @@ export function renderTweet(
       event.stopPropagation();
       onLoadChildren?.(tweet);
     });
-
     actions.appendChild(loadChildren);
-    body.appendChild(actions);
   }
+
+  body.appendChild(actions);
 
   shell.appendChild(body);
   article.appendChild(shell);

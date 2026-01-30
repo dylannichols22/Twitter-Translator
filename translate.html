@@ -257,22 +257,32 @@
     .tweet-actions {
       margin-top: 12px;
       display: flex;
-      gap: 8px;
+      gap: 10px;
+      flex-wrap: wrap;
     }
 
     .tweet-action-btn {
       border: 1px solid var(--border);
-      background: transparent;
-      color: var(--accent);
+      background: var(--surface);
+      color: var(--text);
       border-radius: 9999px;
-      padding: 6px 12px;
+      padding: 6px 14px;
       font-size: 12px;
+      font-weight: 600;
       cursor: pointer;
       transition: background 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .tweet-action-btn:hover {
-      background: rgba(29, 155, 240, 0.1);
+      background: var(--bg-accent);
+      color: var(--accent);
+    }
+
+    .tweet-action-btn:active {
+      transform: translateY(1px);
     }
 
     .tweet-breakdown {
@@ -281,6 +291,7 @@
       grid-template-rows: 0fr;
       opacity: 0;
       transition: grid-template-rows 0.3s ease-out, opacity 0.2s ease-out;
+      justify-items: center;
     }
 
     .tweet-breakdown:not(.hidden) {
@@ -289,16 +300,13 @@
     }
 
     .tweet-breakdown > .breakdown-inner {
-      overflow: hidden;
+      overflow: auto;
       padding: 16px;
       background: var(--surface-muted);
       border-radius: 12px;
       border: 1px solid var(--border-strong);
-      width: fit-content;
-      max-width: 80vw;
-      position: relative;
-      left: 50%;
-      transform: translateX(-50%);
+      width: min(80vw, 100%);
+      max-width: 100%;
     }
 
     .breakdown-loading,
