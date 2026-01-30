@@ -29,6 +29,8 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
   try {
     const options = (message.data as ScrapeOptions | undefined) ?? {};
 
+    const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
     const waitForCondition = async (
       predicate: () => boolean,
       timeoutMs = 8000,
@@ -37,32 +39,83 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
       const start = Date.now();
       while (Date.now() - start < timeoutMs) {
         if (predicate()) return;
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        await sleep(intervalMs);
       }
     };
 
-    await waitForCondition(() => document.querySelectorAll('article[data-testid="tweet"]').length > 0);
+    const getTweetCount = () => document.querySelectorAll('article[data-testid="tweet"]').length;
+    const getCellCount = () => document.querySelectorAll('[data-testid="cellInnerDiv"]').length;
+
+    const waitForStableCounts = async (
+      timeoutMs = 8000,
+      stableMs = 600,
+      intervalMs = 200
+    ): Promise<void> => {
+      const start = Date.now();
+      let lastTweetCount = -1;
+      let lastCellCount = -1;
+      let stableFor = 0;
+
+      while (Date.now() - start < timeoutMs) {
+        const tweetCount = getTweetCount();
+        const cellCount = getCellCount();
+
+        if (tweetCount > 0) {
+          if (tweetCount === lastTweetCount && cellCount === lastCellCount) {
+            stableFor += intervalMs;
+          } else {
+            stableFor = 0;
+          }
+
+          if (stableFor >= stableMs) {
+            return;
+          }
+
+          lastTweetCount = tweetCount;
+          lastCellCount = cellCount;
+        }
+
+        await sleep(intervalMs);
+      }
+    };
+
+    await waitForCondition(() => getTweetCount() > 0);
 
     if (options.expandReplies) {
-      const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
-      const showReplies = buttons.filter((button) => {
-        const text = button.textContent?.toLowerCase() ?? '';
-        return text.includes('show replies') || text.includes('show more replies');
-      });
-      const initialCount = document.querySelectorAll('article[data-testid="tweet"]').length;
-      showReplies.forEach((button) => {
-        if (button instanceof HTMLElement) {
-          button.click();
-        }
-      });
-      if (showReplies.length > 0) {
+      const clickShowReplies = (): number => {
+        const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
+        const showReplies = buttons.filter((button) => {
+          const text = button.textContent?.toLowerCase() ?? '';
+          return text.includes('show replies') || text.includes('show more replies');
+        });
+        showReplies.forEach((button) => {
+          if (button instanceof HTMLElement) {
+            button.click();
+          }
+        });
+        return showReplies.length;
+      };
+
+      const initialTweetCount = getTweetCount();
+      const initialCellCount = getCellCount();
+      const clicked = clickShowReplies();
+
+      if (clicked > 0) {
         await waitForCondition(
-          () => document.querySelectorAll('article[data-testid="tweet"]').length > initialCount,
-          3000,
+          () => getTweetCount() > initialTweetCount || getCellCount() > initialCellCount,
+          3500,
           200
         );
       } else {
-        await new Promise((resolve) => setTimeout(resolve, 350));
+        await sleep(350);
+      }
+
+      await waitForStableCounts(6000, 600, 200);
+
+      if (getTweetCount() <= 1) {
+        await sleep(800);
+        clickShowReplies();
+        await waitForStableCounts(6000, 600, 200);
       }
     }
 

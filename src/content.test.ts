@@ -62,6 +62,34 @@ describe('Content Script', () => {
       expect(response!.url).toBe('https://twitter.com/user/status/123');
     });
 
+
+    it('expands replies before scraping when requested', async () => {
+      mockRuntime.sendMessage.mockResolvedValue({ commentLimit: 10 });
+      document.body.innerHTML = `
+        <button type="button">Show replies</button>
+        <article data-testid="tweet">
+          <div data-testid="tweetText"><span>Main</span></div>
+        </article>
+      `;
+
+      const button = document.querySelector('button');
+      button?.addEventListener('click', () => {
+        const reply = document.createElement('article');
+        reply.setAttribute('data-testid', 'tweet');
+        reply.innerHTML = '<div data-testid="tweetText"><span>Reply</span></div>';
+        document.body.appendChild(reply);
+      });
+
+      const response = await handleMessage({
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: { expandReplies: true },
+      });
+
+      expect(response?.success).toBe(true);
+      expect(response?.tweets).toHaveLength(2);
+      expect(response?.tweets?.[1].text).toBe('Reply');
+    });
+
     it('passes scrape options from message data', async () => {
       document.body.innerHTML = `
         <article data-testid="tweet">
