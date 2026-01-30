@@ -22,6 +22,9 @@ export class PanelController {
   private sourceUrl = '';
   private translationCache: Map<string, CachedTranslation> = new Map();
   private usage: UsageStats = { inputTokens: 0, outputTokens: 0 };
+  private knownTweetIds: Set<string> = new Set();
+  private loadMoreCallback: (() => void) | null = null;
+  private loadMoreBtn: HTMLButtonElement | null = null;
 
   constructor() {
     injectPanelStyles();
@@ -205,6 +208,7 @@ export class PanelController {
 
     const element = renderTweetCard(tweet, translation);
     container.appendChild(element);
+    this.knownTweetIds.add(tweet.id);
   }
 
   /**
@@ -215,6 +219,7 @@ export class PanelController {
     if (!container) return;
 
     container.innerHTML = '';
+    this.knownTweetIds.clear();
 
     for (const tweet of tweets) {
       const translation = translations.find((t) => t.id === tweet.id);
@@ -222,6 +227,81 @@ export class PanelController {
         this.renderTweet(tweet, translation);
       }
     }
+  }
+
+  /**
+   * Returns whether the load more button is currently shown.
+   */
+  hasLoadMoreButton(): boolean {
+    return this.loadMoreBtn !== null && this.loadMoreBtn.parentElement !== null;
+  }
+
+  /**
+   * Shows or hides the load more button.
+   */
+  showLoadMoreButton(show: boolean): void {
+    const container = this.getContentContainer();
+    if (!container) return;
+
+    if (show) {
+      if (!this.loadMoreBtn) {
+        this.loadMoreBtn = document.createElement('button');
+        this.loadMoreBtn.className = 'load-more-btn';
+        this.loadMoreBtn.type = 'button';
+        this.loadMoreBtn.textContent = 'Load more replies';
+        this.loadMoreBtn.addEventListener('click', () => {
+          if (this.loadMoreCallback) {
+            this.loadMoreCallback();
+          }
+        });
+      }
+      if (!this.loadMoreBtn.parentElement) {
+        container.appendChild(this.loadMoreBtn);
+      }
+    } else {
+      if (this.loadMoreBtn && this.loadMoreBtn.parentElement) {
+        this.loadMoreBtn.remove();
+      }
+    }
+  }
+
+  /**
+   * Sets the callback for when load more is clicked.
+   */
+  setLoadMoreCallback(callback: () => void): void {
+    this.loadMoreCallback = callback;
+  }
+
+  /**
+   * Enables or disables the load more button.
+   */
+  disableLoadMoreButton(disable: boolean): void {
+    if (this.loadMoreBtn) {
+      this.loadMoreBtn.disabled = disable;
+    }
+  }
+
+  /**
+   * Appends new tweets without removing existing ones.
+   * Skips tweets that are already rendered.
+   */
+  appendTweets(tweets: Tweet[], translations: CachedTranslation[]): void {
+    for (const tweet of tweets) {
+      if (this.knownTweetIds.has(tweet.id)) {
+        continue;
+      }
+      const translation = translations.find((t) => t.id === tweet.id);
+      if (translation) {
+        this.renderTweet(tweet, translation);
+      }
+    }
+  }
+
+  /**
+   * Returns the set of known tweet IDs.
+   */
+  getKnownTweetIds(): Set<string> {
+    return new Set(this.knownTweetIds);
   }
 
   /**

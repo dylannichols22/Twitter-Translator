@@ -279,6 +279,106 @@ describe('PanelController', () => {
     });
   });
 
+  describe('Load More', () => {
+    it('hasLoadMoreButton returns false initially', () => {
+      const controller = new PanelController();
+      expect(controller.hasLoadMoreButton()).toBe(false);
+    });
+
+    it('showLoadMoreButton adds button to panel', () => {
+      const controller = new PanelController();
+      controller.showLoadMoreButton(true);
+      const panel = document.querySelector('.twitter-translator-panel');
+      expect(panel?.querySelector('.load-more-btn')).not.toBeNull();
+    });
+
+    it('showLoadMoreButton(false) removes button from panel', () => {
+      const controller = new PanelController();
+      controller.showLoadMoreButton(true);
+      controller.showLoadMoreButton(false);
+      const panel = document.querySelector('.twitter-translator-panel');
+      expect(panel?.querySelector('.load-more-btn')).toBeNull();
+    });
+
+    it('load more button has correct text', () => {
+      const controller = new PanelController();
+      controller.showLoadMoreButton(true);
+      const btn = document.querySelector('.twitter-translator-panel .load-more-btn');
+      expect(btn?.textContent).toBe('Load more replies');
+    });
+
+    it('onLoadMore callback is triggered when button clicked', () => {
+      const controller = new PanelController();
+      const callback = vi.fn();
+      controller.setLoadMoreCallback(callback);
+      controller.showLoadMoreButton(true);
+
+      const btn = document.querySelector('.twitter-translator-panel .load-more-btn') as HTMLButtonElement;
+      btn.click();
+
+      expect(callback).toHaveBeenCalled();
+    });
+
+    it('disableLoadMoreButton disables the button', () => {
+      const controller = new PanelController();
+      controller.showLoadMoreButton(true);
+      controller.disableLoadMoreButton(true);
+
+      const btn = document.querySelector('.twitter-translator-panel .load-more-btn') as HTMLButtonElement;
+      expect(btn.disabled).toBe(true);
+    });
+
+    it('disableLoadMoreButton(false) enables the button', () => {
+      const controller = new PanelController();
+      controller.showLoadMoreButton(true);
+      controller.disableLoadMoreButton(true);
+      controller.disableLoadMoreButton(false);
+
+      const btn = document.querySelector('.twitter-translator-panel .load-more-btn') as HTMLButtonElement;
+      expect(btn.disabled).toBe(false);
+    });
+
+    it('appendTweets adds new tweets without removing existing ones', () => {
+      const controller = new PanelController();
+      const tweet1: Tweet = { id: '1', text: '你好', author: 'User1', timestamp: '', isMainPost: true };
+      const tweet2: Tweet = { id: '2', text: '世界', author: 'User2', timestamp: '', isMainPost: false };
+      const translation1 = { id: '1', naturalTranslation: 'Hello', segments: [], notes: [] };
+      const translation2 = { id: '2', naturalTranslation: 'World', segments: [], notes: [] };
+
+      controller.renderTweet(tweet1, translation1);
+      controller.appendTweets([tweet2], [translation2]);
+
+      const content = controller.getContentContainer();
+      const cards = content?.querySelectorAll('.tweet-card');
+      expect(cards?.length).toBe(2);
+    });
+
+    it('appendTweets does not add duplicate tweets', () => {
+      const controller = new PanelController();
+      const tweet1: Tweet = { id: '1', text: '你好', author: 'User1', timestamp: '', isMainPost: true };
+      const translation1 = { id: '1', naturalTranslation: 'Hello', segments: [], notes: [] };
+
+      controller.renderTweet(tweet1, translation1);
+      controller.appendTweets([tweet1], [translation1]);
+
+      const content = controller.getContentContainer();
+      const cards = content?.querySelectorAll('.tweet-card');
+      expect(cards?.length).toBe(1);
+    });
+
+    it('getKnownTweetIds returns set of rendered tweet IDs', () => {
+      const controller = new PanelController();
+      const tweet1: Tweet = { id: '1', text: '你好', author: 'User1', timestamp: '', isMainPost: true };
+      const translation1 = { id: '1', naturalTranslation: 'Hello', segments: [], notes: [] };
+
+      controller.renderTweet(tweet1, translation1);
+
+      const knownIds = controller.getKnownTweetIds();
+      expect(knownIds.has('1')).toBe(true);
+      expect(knownIds.has('2')).toBe(false);
+    });
+  });
+
   describe('Tweet Rendering', () => {
     it('renderTweet adds a tweet card to the panel', () => {
       const controller = new PanelController();
