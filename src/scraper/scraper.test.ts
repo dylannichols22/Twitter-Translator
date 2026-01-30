@@ -238,6 +238,29 @@ describe('Twitter Scraper', () => {
       expect(result.tweets[2].groupStart).toBe(true);
       expect(result.tweets[2].groupEnd).toBe(true);
     });
+
+    it('keeps group continuity when adjacent rows are excluded', () => {
+      document.body.innerHTML = `
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <a href="/user/status/10"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+            <div data-testid="tweetText"><span>First</span></div>
+          </article>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <a href="/user/status/11"><time datetime="2024-01-15T10:31:00.000Z">Jan 15</time></a>
+            <div data-testid="tweetText"><span>Second</span></div>
+          </article>
+        </div>
+      `;
+
+      const result = scrapeTweets({ excludeIds: ['10'] });
+      expect(result.tweets).toHaveLength(1);
+      expect(result.tweets[0].id).toBe('11');
+      expect(result.tweets[0].groupStart).toBe(false);
+      expect(result.tweets[0].groupEnd).toBe(true);
+    });
   });
 });
 

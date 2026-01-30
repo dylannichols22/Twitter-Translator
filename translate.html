@@ -177,6 +177,8 @@
       grid-template-columns: 48px 1fr;
       gap: 12px;
       align-items: start;
+      position: relative;
+      z-index: 1;
     }
 
     .tweet-avatar {
@@ -553,6 +555,7 @@
       left: var(--gutter-left);
       width: 2px;
       background: var(--border);
+      z-index: 0;
     }
 
     .tweet-card.gutter-start::after {

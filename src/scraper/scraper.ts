@@ -137,11 +137,23 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     limitedRowInfos = [rowInfos[0], ...rowInfos.slice(1, 1 + commentLimit)];
   }
 
+  const excludeSet = excludeIds && excludeIds.length > 0 ? new Set(excludeIds) : undefined;
+  const rowsByParent = new WeakMap<Element, Map<number, { id: string; excluded: boolean }>>();
+  limitedTweets.forEach((tweet, idx) => {
+    const row = limitedRowInfos[idx];
+    if (!row.parent || row.index < 0) return;
+    let rows = rowsByParent.get(row.parent);
+    if (!rows) {
+      rows = new Map();
+      rowsByParent.set(row.parent, rows);
+    }
+    rows.set(row.index, { id: tweet.id, excluded: excludeSet?.has(tweet.id) ?? false });
+  });
+
   let filteredTweets = limitedTweets;
   let filteredRowInfos = limitedRowInfos;
 
-  if (excludeIds && excludeIds.length > 0) {
-    const excludeSet = new Set(excludeIds);
+  if (excludeSet && excludeSet.size > 0) {
     const nextTweets: Tweet[] = [];
     const nextRows: Array<{ parent: Element | null; index: number }> = [];
     filteredTweets.forEach((tweet, idx) => {
@@ -161,15 +173,28 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     if (!prev || !curr) return false;
     if (!prev.parent || !curr.parent) return false;
     if (prev.index < 0 || curr.index < 0) return false;
-    return prev.parent === curr.parent && curr.index === prev.index + 1;
+    if (prev.parent !== curr.parent) return false;
+    const rows = rowsByParent.get(curr.parent);
+    if (!rows) return false;
+    return rows.has(curr.index) && rows.has(prev.index) && curr.index === prev.index + 1;
+  };
+
+  const hasRowNeighbor = (
+    curr: { parent: Element | null; index: number } | undefined,
+    direction: -1 | 1
+  ): boolean => {
+    if (!curr || !curr.parent || curr.index < 0) return false;
+    const rows = rowsByParent.get(curr.parent);
+    if (!rows) return false;
+    return rows.has(curr.index + direction);
   };
 
   filteredTweets.forEach((tweet, idx) => {
     const prev = filteredRowInfos[idx - 1];
     const curr = filteredRowInfos[idx];
     const next = filteredRowInfos[idx + 1];
-    const hasPrev = areAdjacent(prev, curr);
-    const hasNext = areAdjacent(curr, next);
+    const hasPrev = areAdjacent(prev, curr) || hasRowNeighbor(curr, -1);
+    const hasNext = areAdjacent(curr, next) || hasRowNeighbor(curr, 1);
     tweet.groupStart = !hasPrev;
     tweet.groupEnd = !hasNext;
   });
