@@ -725,8 +725,8 @@ export class TranslateViewController {
         commentLimit: nextLimit,
         excludeIds: Array.from(this.knownTweetIds),
         scrollToLoadMore: true,
-        scrollMaxRounds: 6,
-        scrollIdleRounds: 2,
+        scrollMaxRounds: 20,
+        scrollIdleRounds: 4,
       },
     });
 

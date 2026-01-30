@@ -182,8 +182,8 @@ describe('Background Script', () => {
           commentLimit: 5,
           excludeIds: ['1'],
           scrollToLoadMore: true,
-          scrollMaxRounds: 6,
-          scrollIdleRounds: 2,
+          scrollMaxRounds: 20,
+          scrollIdleRounds: 4,
         },
       };
 
@@ -195,8 +195,8 @@ describe('Background Script', () => {
           commentLimit: 5,
           excludeIds: ['1'],
           scrollToLoadMore: true,
-          scrollMaxRounds: 6,
-          scrollIdleRounds: 2,
+          scrollMaxRounds: 20,
+          scrollIdleRounds: 4,
         },
       });
       expect(result).toEqual({ success: true, tweets: [] });
