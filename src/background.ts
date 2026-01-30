@@ -83,6 +83,35 @@ export async function handleMessage(
     return tabs.find((tab) => tab.url && normalizeThreadUrl(tab.url) === target);
   };
 
+  const waitForTabComplete = async (tabId: number): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      const listener = (updatedTabId: number, info: { status?: string }) => {
+        if (updatedTabId === tabId && info.status === 'complete') {
+          browser.tabs.onUpdated.removeListener(listener);
+          resolve();
+        }
+      };
+      browser.tabs.onUpdated.addListener(listener);
+    });
+  };
+
+  const scrapeInNewTab = async (url: string, data: { commentLimit?: number; excludeIds?: string[]; expandReplies?: boolean }) => {
+    const tab = await browser.tabs.create({ url, active: false });
+    if (!tab.id) {
+      return { success: false, error: 'Failed to open thread tab' };
+    }
+
+    try {
+      await waitForTabComplete(tab.id);
+      return await browser.tabs.sendMessage(tab.id, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data,
+      });
+    } finally {
+      await browser.tabs.remove(tab.id);
+    }
+  };
+
   switch (message.type) {
     case MESSAGE_TYPES.OPEN_TRANSLATE_PAGE: {
       const data = message.data as { tweets: unknown[]; url: string };
@@ -147,10 +176,18 @@ export async function handleMessage(
     case MESSAGE_TYPES.SCRAPE_CHILD_REPLIES: {
       const data = message.data as {
         url: string;
+        threadUrl?: string;
         commentLimit?: number;
         excludeIds?: string[];
-        parentId?: string;
       };
+
+      if (message.type === MESSAGE_TYPES.SCRAPE_CHILD_REPLIES && data.threadUrl) {
+        return await scrapeInNewTab(data.threadUrl, {
+          commentLimit: data.commentLimit,
+          excludeIds: data.excludeIds,
+          expandReplies: true,
+        });
+      }
 
       const tab = await findThreadTab(data.url);
       if (!tab?.id) {
@@ -162,7 +199,6 @@ export async function handleMessage(
         data: {
           commentLimit: data.commentLimit,
           excludeIds: data.excludeIds,
-          parentId: data.parentId,
         },
       });
     }

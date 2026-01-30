@@ -29,6 +29,43 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
   try {
     const options = (message.data as ScrapeOptions | undefined) ?? {};
 
+    const waitForCondition = async (
+      predicate: () => boolean,
+      timeoutMs = 8000,
+      intervalMs = 200
+    ): Promise<void> => {
+      const start = Date.now();
+      while (Date.now() - start < timeoutMs) {
+        if (predicate()) return;
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+    };
+
+    await waitForCondition(() => document.querySelectorAll('article[data-testid="tweet"]').length > 0);
+
+    if (options.expandReplies) {
+      const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
+      const showReplies = buttons.filter((button) => {
+        const text = button.textContent?.toLowerCase() ?? '';
+        return text.includes('show replies') || text.includes('show more replies');
+      });
+      const initialCount = document.querySelectorAll('article[data-testid="tweet"]').length;
+      showReplies.forEach((button) => {
+        if (button instanceof HTMLElement) {
+          button.click();
+        }
+      });
+      if (showReplies.length > 0) {
+        await waitForCondition(
+          () => document.querySelectorAll('article[data-testid="tweet"]').length > initialCount,
+          3000,
+          200
+        );
+      } else {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      }
+    }
+
     // Get comment limit from settings
     const settings = await browser.runtime.sendMessage({
       type: MESSAGE_TYPES.GET_SETTINGS,
@@ -37,7 +74,7 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
     const { tweets } = scrapeTweets({
       commentLimit: options.commentLimit ?? settings?.commentLimit,
       excludeIds: options.excludeIds,
-      parentId: options.parentId,
+      expandReplies: options.expandReplies,
     });
 
     return {

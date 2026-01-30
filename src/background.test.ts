@@ -12,6 +12,11 @@ const mockTabs = {
   create: vi.fn(),
   query: vi.fn(),
   sendMessage: vi.fn(),
+  remove: vi.fn(),
+  onUpdated: {
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+  },
 };
 
 const mockRuntime = {
@@ -185,13 +190,12 @@ describe('Background Script', () => {
         data: {
           commentLimit: 5,
           excludeIds: ['1'],
-          parentId: undefined,
         },
       });
       expect(result).toEqual({ success: true, tweets: [] });
     });
 
-    it('forwards SCRAPE_CHILD_REPLIES to content script with parentId', async () => {
+    it('forwards SCRAPE_CHILD_REPLIES to content script', async () => {
       mockTabs.query.mockResolvedValue([{ id: 123, url: 'https://twitter.com/user/status/1' }]);
       mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
 
@@ -199,7 +203,6 @@ describe('Background Script', () => {
         type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
         data: {
           url: 'https://twitter.com/user/status/1',
-          parentId: '42',
           excludeIds: ['1'],
         },
       };
@@ -211,9 +214,39 @@ describe('Background Script', () => {
         data: {
           commentLimit: undefined,
           excludeIds: ['1'],
-          parentId: '42',
         },
       });
+      expect(result).toEqual({ success: true, tweets: [] });
+    });
+
+    it('opens a thread tab when SCRAPE_CHILD_REPLIES provides threadUrl', async () => {
+      mockTabs.create.mockResolvedValue({ id: 456 });
+      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
+      mockTabs.onUpdated.addListener.mockImplementation((listener: (tabId: number, info: { status?: string }) => void) => {
+        listener(456, { status: 'complete' });
+      });
+
+      const message: Message = {
+        type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
+        data: {
+          url: 'https://twitter.com/user/status/1',
+          threadUrl: 'https://twitter.com/user/status/42',
+          excludeIds: ['1'],
+        },
+      };
+
+      const result = await handleMessage(message, {}, vi.fn());
+
+      expect(mockTabs.create).toHaveBeenCalledWith({ url: 'https://twitter.com/user/status/42', active: false });
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(456, {
+        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        data: {
+          commentLimit: undefined,
+          excludeIds: ['1'],
+          expandReplies: true,
+        },
+      });
+      expect(mockTabs.remove).toHaveBeenCalledWith(456);
       expect(result).toEqual({ success: true, tweets: [] });
     });
   });
