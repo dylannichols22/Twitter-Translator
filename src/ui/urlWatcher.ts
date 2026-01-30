@@ -58,9 +58,11 @@ export class UrlWatcher {
   private debounceMs: number;
   private lastUrl: string;
   private lastPathname: string;
-  private intervalId: ReturnType<typeof setInterval> | null = null;
   private debounceTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private popstateHandler: (() => void) | null = null;
+  private originalPushState: History['pushState'] | null = null;
+  private originalReplaceState: History['replaceState'] | null = null;
+  private started = false;
 
   constructor(callback?: UrlChangeCallback, debounceMs = 200) {
     this.callback = callback ?? null;
@@ -73,12 +75,33 @@ export class UrlWatcher {
    * Starts watching for URL changes.
    */
   start(): void {
-    // Poll for URL changes (handles Twitter's SPA navigation)
-    this.intervalId = setInterval(() => {
-      this.checkUrlChange();
-    }, 100);
+    if (this.started) {
+      return;
+    }
+    this.started = true;
 
-    // Also listen for popstate (browser back/forward)
+    this.lastUrl = window.location.href;
+    this.lastPathname = getPathname(this.lastUrl);
+
+    // Hook History API
+    if (!this.originalPushState) {
+      this.originalPushState = history.pushState;
+    }
+    if (!this.originalReplaceState) {
+      this.originalReplaceState = history.replaceState;
+    }
+
+    history.pushState = (...args) => {
+      this.originalPushState?.apply(history, args);
+      this.checkUrlChange();
+    };
+
+    history.replaceState = (...args) => {
+      this.originalReplaceState?.apply(history, args);
+      this.checkUrlChange();
+    };
+
+    // Listen for popstate (browser back/forward)
     this.popstateHandler = () => {
       this.checkUrlChange();
     };
@@ -89,11 +112,6 @@ export class UrlWatcher {
    * Stops watching for URL changes.
    */
   stop(): void {
-    if (this.intervalId !== null) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
-
     if (this.debounceTimeoutId !== null) {
       clearTimeout(this.debounceTimeoutId);
       this.debounceTimeoutId = null;
@@ -103,6 +121,15 @@ export class UrlWatcher {
       window.removeEventListener('popstate', this.popstateHandler);
       this.popstateHandler = null;
     }
+
+    if (this.originalPushState) {
+      history.pushState = this.originalPushState;
+    }
+    if (this.originalReplaceState) {
+      history.replaceState = this.originalReplaceState;
+    }
+
+    this.started = false;
   }
 
   /**

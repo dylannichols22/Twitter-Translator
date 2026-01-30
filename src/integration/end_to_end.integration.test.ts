@@ -14,6 +14,7 @@ type RuntimeListener = (
 
 function createMockBrowser() {
   const runtimeListeners: RuntimeListener[] = [];
+  const sessionStore: Record<string, unknown> = {};
 
   const runtime = {
     onMessage: {
@@ -50,6 +51,13 @@ function createMockBrowser() {
     create: vi.fn(),
     query: vi.fn(),
     sendMessage: vi.fn(),
+    get: vi.fn(),
+    onActivated: {
+      addListener: vi.fn(),
+    },
+    onUpdated: {
+      addListener: vi.fn(),
+    },
   };
 
   const storage = {
@@ -58,6 +66,34 @@ function createMockBrowser() {
       set: vi.fn(),
       remove: vi.fn(),
     },
+    session: {
+      get: vi.fn(async (keys: string[] | null) => {
+        if (keys === null) {
+          return { ...sessionStore };
+        }
+        const entries: Record<string, unknown> = {};
+        keys.forEach((key) => {
+          entries[key] = sessionStore[key];
+        });
+        return entries;
+      }),
+      set: vi.fn(async (items: Record<string, unknown>) => {
+        Object.assign(sessionStore, items);
+      }),
+      remove: vi.fn(async (keys: string | string[]) => {
+        const list = Array.isArray(keys) ? keys : [keys];
+        list.forEach((key) => {
+          delete sessionStore[key];
+        });
+      }),
+    },
+  };
+
+  const browserAction = {
+    onClicked: {
+      addListener: vi.fn(),
+    },
+    setPopup: vi.fn(),
   };
 
   return {
@@ -66,6 +102,7 @@ function createMockBrowser() {
       contextMenus,
       tabs,
       storage,
+      browserAction,
     },
   };
 }
@@ -150,9 +187,9 @@ describe('End-to-end flow', () => {
     expect(createdUrl).toContain('translate.html');
 
     const url = new URL(createdUrl);
-    const dataParam = url.searchParams.get('data');
+    const payloadKey = url.searchParams.get('payloadKey') ?? '';
     Object.defineProperty(window, 'location', {
-      value: { search: `?data=${dataParam ?? ''}` },
+      value: { search: `?payloadKey=${payloadKey}` },
       writable: true,
       configurable: true,
     });

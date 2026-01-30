@@ -1,50 +1,119 @@
 import type { TranslationResult } from '../translator';
 
+export interface CacheContext {
+  commentLimit?: number;
+}
+
 export class SessionCache {
   private cache: Map<string, TranslationResult> = new Map();
+  private storagePrefix = 'tt-translation-cache:';
 
-  get(url: string): TranslationResult | undefined {
-    const key = SessionCache.generateCacheKey(url);
-    return this.cache.get(key);
+  private hasSessionStorage(): boolean {
+    return typeof browser !== 'undefined' && !!browser.storage?.session;
   }
 
-  set(url: string, translation: TranslationResult): void {
-    const key = SessionCache.generateCacheKey(url);
+  private storageKey(key: string): string {
+    return `${this.storagePrefix}${key}`;
+  }
+
+  async get(url: string, context?: CacheContext): Promise<TranslationResult | undefined> {
+    const key = SessionCache.generateCacheKey(url, context);
+    if (this.cache.has(key)) {
+      return this.cache.get(key);
+    }
+
+    if (!this.hasSessionStorage()) {
+      return undefined;
+    }
+
+    const result = await browser.storage.session.get([this.storageKey(key)]);
+    const value = result[this.storageKey(key)] as TranslationResult | undefined;
+    if (value) {
+      this.cache.set(key, value);
+    }
+    return value;
+  }
+
+  async set(url: string, translation: TranslationResult, context?: CacheContext): Promise<void> {
+    const key = SessionCache.generateCacheKey(url, context);
     this.cache.set(key, translation);
+
+    if (!this.hasSessionStorage()) {
+      return;
+    }
+
+    await browser.storage.session.set({
+      [this.storageKey(key)]: translation,
+    });
   }
 
-  has(url: string): boolean {
-    const key = SessionCache.generateCacheKey(url);
-    return this.cache.has(key);
+  async has(url: string, context?: CacheContext): Promise<boolean> {
+    const key = SessionCache.generateCacheKey(url, context);
+    if (this.cache.has(key)) {
+      return true;
+    }
+
+    if (!this.hasSessionStorage()) {
+      return false;
+    }
+
+    const result = await browser.storage.session.get([this.storageKey(key)]);
+    return typeof result[this.storageKey(key)] !== 'undefined';
   }
 
-  delete(url: string): void {
-    const key = SessionCache.generateCacheKey(url);
+  async delete(url: string, context?: CacheContext): Promise<void> {
+    const key = SessionCache.generateCacheKey(url, context);
     this.cache.delete(key);
+
+    if (!this.hasSessionStorage()) {
+      return;
+    }
+
+    await browser.storage.session.remove(this.storageKey(key));
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.cache.clear();
+
+    if (!this.hasSessionStorage()) {
+      return;
+    }
+
+    const all = await browser.storage.session.get(null);
+    const keys = Object.keys(all).filter((key) => key.startsWith(this.storagePrefix));
+    if (keys.length > 0) {
+      await browser.storage.session.remove(keys);
+    }
   }
 
-  size(): number {
-    return this.cache.size;
+  async size(): Promise<number> {
+    if (this.cache.size > 0) {
+      return this.cache.size;
+    }
+
+    if (!this.hasSessionStorage()) {
+      return 0;
+    }
+
+    const all = await browser.storage.session.get(null);
+    return Object.keys(all).filter((key) => key.startsWith(this.storagePrefix)).length;
   }
 
-  static generateCacheKey(url: string): string {
+  static generateCacheKey(url: string, context?: CacheContext): string {
+    const limit = typeof context?.commentLimit === 'number' ? context.commentLimit : 'default';
     try {
       const parsed = new URL(url);
 
       // Normalize twitter.com and x.com to same domain
-      const normalizedHost = parsed.hostname.replace('x.com', 'twitter.com');
+      const normalizedHost = parsed.hostname.replace(/(^|\.)x\.com$/, '$1twitter.com');
 
       // Extract pathname without query params
       const pathname = parsed.pathname;
 
-      return `${normalizedHost}${pathname}`;
+      return `${normalizedHost}${pathname}::limit=${limit}`;
     } catch {
       // If URL parsing fails, use the raw URL
-      return url;
+      return `${url}::limit=${limit}`;
     }
   }
 }

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Panel CSS as a TypeScript module for injection.
  * All selectors are prefixed with .twitter-translator-panel to avoid conflicts with Twitter.
  */
@@ -10,6 +10,8 @@ export const PANEL_STYLES = `
   top: 0;
   right: 0;
   width: 450px;
+  min-width: 360px;
+  max-width: min(80vw, 720px);
   height: 100vh;
   background: var(--tt-bg, #ffffff);
   border-left: 1px solid var(--tt-border, #eff3f4);
@@ -20,6 +22,8 @@ export const PANEL_STYLES = `
   transform: translateX(100%);
   transition: transform 0.3s ease-out;
   box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+  resize: horizontal;
+  overflow: auto;
 
   /* CSS Custom Properties for theming */
   --tt-bg: #ffffff;
@@ -34,6 +38,38 @@ export const PANEL_STYLES = `
   --tt-accent-strong: #1a8cd8;
   --tt-warning: #b45309;
   --tt-warning-bg: #fef3c7;
+}
+
+/* Resize Handle */
+.twitter-translator-panel .panel-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 8px;
+  height: 100%;
+  cursor: ew-resize;
+  background: transparent;
+  z-index: 1;
+}
+
+.twitter-translator-panel .panel-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 2px;
+  width: 4px;
+  height: 48px;
+  transform: translateY(-50%);
+  border-radius: 999px;
+  background: rgba(29, 155, 240, 0.35);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.twitter-translator-panel .panel-resize-handle:hover::after,
+.twitter-translator-panel .panel-resize-handle:active::after,
+body.tt-panel-resizing .twitter-translator-panel .panel-resize-handle::after {
+  opacity: 1;
 }
 
 /* Dark mode support */
@@ -105,7 +141,7 @@ export const PANEL_STYLES = `
 .twitter-translator-panel .panel-content {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   background: var(--tt-bg);
 }
 
@@ -117,6 +153,37 @@ export const PANEL_STYLES = `
   font-size: 13px;
   color: var(--tt-muted);
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.twitter-translator-panel .panel-footer-usage {
+  font-size: 13px;
+  color: var(--tt-muted);
+}
+
+.twitter-translator-panel .panel-load-more {
+  border: 1px solid var(--tt-border);
+  background: var(--tt-surface);
+  color: var(--tt-text);
+  border-radius: 9999px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.twitter-translator-panel .panel-load-more:hover:enabled {
+  background: var(--tt-bg-accent);
+  color: var(--tt-accent);
+}
+
+.twitter-translator-panel .panel-load-more:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Loading State */
@@ -161,9 +228,9 @@ export const PANEL_STYLES = `
 }
 
 .twitter-translator-panel .panel-empty::before {
-  content: '📝';
+  content: '[ ]';
   display: block;
-  font-size: 48px;
+  font-size: 32px;
   margin-bottom: 16px;
 }
 
@@ -176,6 +243,37 @@ export const PANEL_STYLES = `
   --gutter-left: 36px;
   --gutter-top: 68px;
   transition: background 0.2s;
+}
+
+/* Reply Thread Connectors */
+.twitter-translator-panel .tweet-card.group-start {
+  border-top: 1px solid var(--tt-border);
+}
+
+.twitter-translator-panel .tweet-card.gutter-start::after,
+.twitter-translator-panel .tweet-card.gutter-middle::after,
+.twitter-translator-panel .tweet-card.gutter-end::after {
+  content: '';
+  position: absolute;
+  left: var(--gutter-left);
+  width: 2px;
+  background: var(--tt-border);
+  z-index: 0;
+}
+
+.twitter-translator-panel .tweet-card.gutter-start::after {
+  top: var(--gutter-top);
+  bottom: 0;
+}
+
+.twitter-translator-panel .tweet-card.gutter-middle::after {
+  top: 0;
+  bottom: 0;
+}
+
+.twitter-translator-panel .tweet-card.gutter-end::after {
+  top: 0;
+  height: var(--gutter-top);
 }
 
 .twitter-translator-panel .tweet-card:hover {
@@ -226,7 +324,7 @@ export const PANEL_STYLES = `
 }
 
 .twitter-translator-panel .tweet-header::after {
-  content: "▾";
+  content: "v";
   font-size: 12px;
   color: var(--tt-muted);
   transition: transform 0.2s;
@@ -403,25 +501,6 @@ export const PANEL_STYLES = `
   background: var(--tt-accent);
 }
 
-/* Load More Button */
-.twitter-translator-panel .load-more-btn {
-  display: block;
-  width: calc(100% - 32px);
-  margin: 12px 16px 24px;
-  padding: 12px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--tt-border);
-  background: transparent;
-  color: var(--tt-accent);
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.twitter-translator-panel .load-more-btn:hover {
-  background: rgba(29, 155, 240, 0.1);
-}
-
 .twitter-translator-panel .hidden {
   display: none !important;
 }
@@ -489,3 +568,7 @@ export function removePanelStyles(): void {
     style.remove();
   }
 }
+
+
+
+

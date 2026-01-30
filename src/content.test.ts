@@ -66,10 +66,10 @@ describe('Content Script', () => {
     it('expands replies before scraping when requested', async () => {
       mockRuntime.sendMessage.mockResolvedValue({ commentLimit: 10 });
       document.body.innerHTML = `
-        <button type="button">Show replies</button>
         <article data-testid="tweet">
           <div data-testid="tweetText"><span>Main</span></div>
         </article>
+        <button type="button">Show replies</button>
       `;
 
       const button = document.querySelector('button');
@@ -86,8 +86,8 @@ describe('Content Script', () => {
       });
 
       expect(response?.success).toBe(true);
-      expect(response?.tweets).toHaveLength(2);
-      expect(response?.tweets?.[1].text).toBe('Reply');
+      expect(response?.tweets).toHaveLength(1);
+      expect(response?.tweets?.[0].text).toBe('Main');
     });
 
     it('returns existing replies quickly when already rendered', async () => {

@@ -177,7 +177,7 @@ describe('Twitter Scraper', () => {
       expect(result.tweets[0].hasReplies).toBe(true);
     });
 
-    it('marks inline replies when preceded by a show replies cell', () => {
+    it('filters out inline replies when preceded by a show replies cell', () => {
       document.body.innerHTML = `
         <div data-testid="cellInnerDiv">
           <button type="button">Show replies</button>
@@ -191,7 +191,24 @@ describe('Twitter Scraper', () => {
       `;
 
       const result = scrapeTweets();
-      expect(result.tweets[0].inlineReply).toBe(true);
+      expect(result.tweets).toHaveLength(0);
+    });
+
+    it('filters out inline replies detected by data-testid', () => {
+      document.body.innerHTML = `
+        <div data-testid="cellInnerDiv">
+          <button type="button" data-testid="showMoreReplies"></button>
+        </div>
+        <div data-testid="cellInnerDiv">
+          <article data-testid="tweet">
+            <a href="/user/status/301"><time datetime="2024-01-15T10:31:00.000Z">Jan 15</time></a>
+            <div data-testid="tweetText"><span>Inline reply testid</span></div>
+          </article>
+        </div>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets).toHaveLength(0);
     });
 
     it('marks no replies when reply count is zero', () => {
@@ -230,16 +247,14 @@ describe('Twitter Scraper', () => {
       `;
 
       const result = scrapeTweets();
-      expect(result.tweets).toHaveLength(3);
+      expect(result.tweets).toHaveLength(2);
       expect(result.tweets[0].groupStart).toBe(true);
       expect(result.tweets[0].groupEnd).toBe(false);
       expect(result.tweets[1].groupStart).toBe(false);
       expect(result.tweets[1].groupEnd).toBe(true);
-      expect(result.tweets[2].groupStart).toBe(true);
-      expect(result.tweets[2].groupEnd).toBe(true);
     });
 
-    it('keeps group continuity when adjacent rows are excluded', () => {
+    it('breaks group continuity when adjacent rows are excluded', () => {
       document.body.innerHTML = `
         <div data-testid="cellInnerDiv">
           <article data-testid="tweet">
@@ -258,8 +273,45 @@ describe('Twitter Scraper', () => {
       const result = scrapeTweets({ excludeIds: ['10'] });
       expect(result.tweets).toHaveLength(1);
       expect(result.tweets[0].id).toBe('11');
-      expect(result.tweets[0].groupStart).toBe(false);
+      expect(result.tweets[0].groupStart).toBe(true);
       expect(result.tweets[0].groupEnd).toBe(true);
+    });
+
+    it('creates a fallback ID when no status link exists', () => {
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <div data-testid="User-Name"><span>Author</span></div>
+          <div data-testid="tweetText"><span>Hello</span></div>
+        </article>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets[0].id).toMatch(/^fallback-/);
+    });
+
+    it('prefers the primary tweet status link over quoted tweet links', () => {
+      Object.defineProperty(window, 'location', {
+        value: { origin: 'https://twitter.com' },
+        writable: true,
+        configurable: true,
+      });
+
+      document.body.innerHTML = `
+        <article data-testid="tweet">
+          <a href="/user/status/999"><time datetime="2024-01-15T10:30:00.000Z">Jan 15</time></a>
+          <div data-testid="tweetText"><span>Main tweet</span></div>
+          <div class="quoted">
+            <article data-testid="tweet">
+              <a href="/user/status/555"><time datetime="2024-01-14T10:30:00.000Z">Jan 14</time></a>
+              <div data-testid="tweetText"><span>Quoted tweet</span></div>
+            </article>
+          </div>
+        </article>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets[0].id).toBe('999');
+      expect(result.tweets[0].url).toBe('https://twitter.com/user/status/999');
     });
   });
 });

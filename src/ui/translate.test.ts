@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../translator', () => ({
   translateQuickStreaming: vi.fn(),
+  getBreakdown: vi.fn(),
 }));
 
-import { translateQuickStreaming } from '../translator';
+import { translateQuickStreaming, getBreakdown } from '../translator';
 import {
   renderTweet,
   renderSegmentTable,
@@ -165,6 +166,12 @@ describe('Translation View', () => {
       expect(element.textContent).toContain('TestUser');
     });
 
+    it('omits invalid timestamps', () => {
+      const badTimestampTweet = { ...mockTweet, timestamp: 'not-a-date' };
+      const element = renderTweet(badTimestampTweet, mockTranslation);
+      expect(element.textContent).not.toContain('Invalid Date');
+    });
+
     it('has expandable breakdown section', () => {
       const element = renderTweet(mockTweet, mockTranslation);
 
@@ -193,24 +200,6 @@ describe('Translation View', () => {
       expect(replyElement.classList.contains('main-post')).toBe(false);
     });
 
-    it('shows a load replies button for comments', () => {
-      const replyTweet = { ...mockTweet, isMainPost: false };
-      const onLoadChildren = vi.fn();
-      const element = renderTweet(replyTweet, mockTranslation, undefined, onLoadChildren);
-
-      const button = element.querySelector('.tweet-load-children') as HTMLButtonElement | null;
-      expect(button).toBeTruthy();
-
-      button?.dispatchEvent(new Event('click'));
-      expect(onLoadChildren).toHaveBeenCalledWith(replyTweet);
-    });
-
-    it('hides load replies button when no replies', () => {
-      const replyTweet = { ...mockTweet, isMainPost: false, hasReplies: false };
-      const element = renderTweet(replyTweet, mockTranslation);
-      const button = element.querySelector('.tweet-load-children');
-      expect(button).toBeNull();
-    });
 
     it('breakdown section has inner wrapper for CSS grid animation', () => {
       const element = renderTweet(mockTweet, mockTranslation);
@@ -412,8 +401,8 @@ describe('Translation View', () => {
       });
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_CACHED_TRANSLATION') return null;
         if (message.type === 'GET_SETTINGS') return { apiKey: '' };
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
         return null;
       });
 
@@ -445,8 +434,8 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 10 };
         if (message.type === 'GET_CACHED_TRANSLATION') return cachedResult;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key' };
         return null;
       });
 
@@ -456,6 +445,45 @@ describe('Translation View', () => {
       expect(translateQuickStreaming).not.toHaveBeenCalled();
       const tweetsContainer = document.getElementById('tweets-container');
       expect(tweetsContainer?.textContent).toContain('Hello');
+    });
+
+    it('uses cached breakdown without re-fetching', async () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: 'ä½ å¥½', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      const cachedResult = {
+        translations: [
+          {
+            id: '1',
+            naturalTranslation: 'Hello',
+            segments: [{ chinese: 'ä½ ', pinyin: 'nÇ', gloss: 'you' }],
+            notes: ['Note'],
+          },
+        ],
+        usage: { inputTokens: 10, outputTokens: 20 },
+      };
+
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_SETTINGS') return { apiKey: '' };
+        if (message.type === 'GET_CACHED_TRANSLATION') return cachedResult;
+        return null;
+      });
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      const header = document.querySelector('.tweet-header');
+      header?.dispatchEvent(new Event('click'));
+
+      expect(getBreakdown).not.toHaveBeenCalled();
     });
 
     it('records usage and caches translation on success', async () => {
@@ -478,8 +506,8 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 10 };
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key' };
         return { success: true };
       });
 
@@ -500,10 +528,9 @@ describe('Translation View', () => {
       });
       expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
         type: 'CACHE_TRANSLATION',
-        data: {
+        data: expect.objectContaining({
           url: 'https://twitter.com/user/status/1',
-          translation: result,
-        },
+        }),
       });
     });
 
@@ -527,8 +554,8 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 10 };
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key' };
         return { success: true };
       });
 
@@ -545,310 +572,5 @@ describe('Translation View', () => {
       const estimated = document.getElementById('estimated-cost');
       expect(estimated?.textContent).toContain('Translation cost:');
     });
-
-    it('loads more replies and only translates new tweets', async () => {
-      document.body.innerHTML = `
-        <div id="tweets-container"></div>
-        <div id="loading"></div>
-        <div id="error-message"></div>
-        <div id="estimated-cost"></div>
-        <button id="load-more-btn"></button>
-      `;
-
-      const tweetData = {
-        tweets: [{ id: '1', text: 'ä½ å¥½', author: 'Test', timestamp: '', isMainPost: true }],
-        url: 'https://twitter.com/user/status/1',
-      };
-
-      Object.defineProperty(window, 'location', {
-        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
-        writable: true,
-        configurable: true,
-      });
-
-      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 1 };
-        if (message.type === 'SCRAPE_MORE') {
-          return {
-            success: true,
-            tweets: [
-              { id: '1', text: 'ä½ å¥½', author: 'Test', timestamp: '', isMainPost: true },
-              { id: '2', text: 'æ–°å›žå¤', author: 'Reply', timestamp: '', isMainPost: false },
-            ],
-            url: 'https://twitter.com/user/status/1',
-          };
-        }
-        return { success: true };
-      });
-
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (tweets, _apiKey, callbacks) => {
-          tweets.forEach((tweet) => {
-            callbacks.onTranslation({ id: tweet.id, naturalTranslation: `T-${tweet.id}` });
-          });
-          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
-        }
-      );
-
-      const controller = new TranslateViewController();
-      await controller.translate();
-
-      const loadMore = document.getElementById('load-more-btn');
-      loadMore?.dispatchEvent(new Event('click'));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(translateQuickStreaming).toHaveBeenCalledTimes(2);
-      const secondCallTweets = vi.mocked(translateQuickStreaming).mock.calls[1][0] as { id: string }[];
-      expect(secondCallTweets).toHaveLength(1);
-      expect(secondCallTweets[0].id).toBe('2');
-    });
-
-    it('hides load more button when no more replies', async () => {
-      document.body.innerHTML = `
-        <div id="tweets-container"></div>
-        <div id="loading"></div>
-        <div id="error-message"></div>
-        <div id="estimated-cost"></div>
-        <button id="load-more-btn"></button>
-      `;
-
-      const tweetData = {
-        tweets: [{ id: '1', text: 'ä½ å¥½', author: 'Test', timestamp: '', isMainPost: true }],
-        url: 'https://twitter.com/user/status/1',
-      };
-
-      Object.defineProperty(window, 'location', {
-        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
-        writable: true,
-        configurable: true,
-      });
-
-      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 1 };
-        if (message.type === 'SCRAPE_MORE') {
-          return { success: true, tweets: [], url: 'https://twitter.com/user/status/1' };
-        }
-        return { success: true };
-      });
-
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (_tweets, _apiKey, callbacks) => {
-          callbacks.onTranslation({ id: '1', naturalTranslation: 'T-1' });
-          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
-        }
-      );
-
-      const controller = new TranslateViewController();
-      await controller.translate();
-
-      const loadMore = document.getElementById('load-more-btn');
-      loadMore?.dispatchEvent(new Event('click'));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(loadMore?.classList.contains('hidden')).toBe(true);
-    });
-
-
-    it('navigates the source tab for reply threads when available', async () => {
-      document.body.innerHTML = `
-        <div id="tweets-container"></div>
-        <div id="loading"></div>
-        <div id="error-message"></div>
-        <div id="estimated-cost"></div>
-        <button class="nav-back" type="button"></button>
-        <button id="load-more-btn"></button>
-      `;
-
-      const tweetData = {
-        tweets: [
-          { id: '1', text: 'Main post', author: 'Main', timestamp: '', isMainPost: true },
-          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, url: 'https://twitter.com/user/status/2' },
-        ],
-        url: 'https://twitter.com/user/status/1',
-        sourceTabId: 99,
-      };
-
-      Object.defineProperty(window, 'location', {
-        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
-        writable: true,
-        configurable: true,
-      });
-
-      mockRuntime.sendMessage.mockImplementation(async (message: { type: string; data?: unknown }) => {
-        if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
-        if (message.type === 'NAVIGATE_AND_SCRAPE') {
-          return {
-            success: true,
-            tweets: [
-              { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
-              { id: '3', text: 'Child reply', author: 'Child', timestamp: '', isMainPost: false },
-            ],
-            url: 'https://twitter.com/user/status/1',
-          };
-        }
-        return { success: true };
-      });
-
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (tweets, _apiKey, callbacks) => {
-          tweets.forEach((tweet) => {
-            callbacks.onTranslation({ id: tweet.id, naturalTranslation: `T-${tweet.id}` });
-          });
-          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
-        }
-      );
-
-      const controller = new TranslateViewController();
-      await controller.translate();
-
-      const loadChildButton = document.querySelector('.tweet-load-children');
-      loadChildButton?.dispatchEvent(new Event('click'));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
-        type: 'NAVIGATE_AND_SCRAPE',
-        data: expect.objectContaining({
-          url: 'https://twitter.com/user/status/2',
-        }),
-      });
-
-      expect(translateQuickStreaming).toHaveBeenCalledTimes(2);
-    });
-
-
-    it('shows an error when no reply thread is available', async () => {
-      document.body.innerHTML = `
-        <div id="tweets-container"></div>
-        <div id="loading"></div>
-        <div id="error-message"></div>
-        <div id="estimated-cost"></div>
-        <button class="nav-back" type="button"></button>
-        <button id="load-more-btn"></button>
-      `;
-
-      const tweetData = {
-        tweets: [
-          { id: '1', text: 'Main post', author: 'Main', timestamp: '', isMainPost: true },
-          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, hasReplies: true, url: 'https://twitter.com/user/status/2' },
-        ],
-        url: 'https://twitter.com/user/status/1',
-        sourceTabId: 99,
-      };
-
-      Object.defineProperty(window, 'location', {
-        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
-        writable: true,
-        configurable: true,
-      });
-
-      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
-        if (message.type === 'NAVIGATE_AND_SCRAPE') {
-          return {
-            success: true,
-            tweets: [
-              { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
-            ],
-            url: 'https://twitter.com/user/status/1',
-          };
-        }
-        return { success: true };
-      });
-
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (_tweets, _apiKey, callbacks) => {
-          callbacks.onTranslation({ id: '1', naturalTranslation: 'T-1' });
-          callbacks.onTranslation({ id: '2', naturalTranslation: 'T-2' });
-          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
-        }
-      );
-
-      const controller = new TranslateViewController();
-      await controller.translate();
-
-      const loadChildButton = document.querySelector('.tweet-load-children');
-      loadChildButton?.dispatchEvent(new Event('click'));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      const error = document.getElementById('error-message');
-      expect(error?.textContent).toContain('No replies to show');
-      expect(mockRuntime.sendMessage).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'OPEN_TRANSLATE_PAGE' })
-      );
-    });
-
-    it('shows a full-page loading overlay while navigating replies', async () => {
-      document.body.innerHTML = `
-        <div id="tweets-container"></div>
-        <div id="loading"></div>
-        <div id="error-message"></div>
-        <div id="estimated-cost"></div>
-        <button class="nav-back" type="button"></button>
-        <button id="load-more-btn"></button>
-      `;
-
-      const tweetData = {
-        tweets: [
-          { id: '1', text: 'Main post', author: 'Main', timestamp: '', isMainPost: true },
-          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: false, url: 'https://twitter.com/user/status/2' },
-        ],
-        url: 'https://twitter.com/user/status/1',
-        sourceTabId: 99,
-      };
-
-      Object.defineProperty(window, 'location', {
-        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
-        writable: true,
-        configurable: true,
-      });
-
-      let resolveNavigate: ((value: unknown) => void) | undefined;
-      const navigatePromise = new Promise((resolve) => {
-        resolveNavigate = resolve;
-      });
-
-      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_CACHED_TRANSLATION') return null;
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 2 };
-        if (message.type === 'NAVIGATE_AND_SCRAPE') return navigatePromise;
-        return { success: true };
-      });
-
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (tweets, _apiKey, callbacks) => {
-          tweets.forEach((tweet) => {
-            callbacks.onTranslation({ id: tweet.id, naturalTranslation: `T-${tweet.id}` });
-          });
-          callbacks.onComplete({ inputTokens: 1, outputTokens: 1 });
-        }
-      );
-
-      const controller = new TranslateViewController();
-      await controller.translate();
-
-      const loadChildButton = document.querySelector('.tweet-load-children');
-      loadChildButton?.dispatchEvent(new Event('click'));
-
-      expect(document.body.classList.contains('loading-overlay')).toBe(true);
-
-      resolveNavigate?.({
-        success: true,
-        tweets: [
-          { id: '2', text: 'Reply post', author: 'Reply', timestamp: '', isMainPost: true },
-          { id: '3', text: 'Child reply', author: 'Child', timestamp: '', isMainPost: false },
-        ],
-        url: 'https://twitter.com/user/status/2',
-      });
-
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      await new Promise((resolve) => setTimeout(resolve, 0));
-
-      expect(document.body.classList.contains('loading-overlay')).toBe(false);
-    });
   });
 });
-

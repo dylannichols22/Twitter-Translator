@@ -12,7 +12,7 @@ describe('UrlWatcher', () => {
     delete (window as { location?: Location }).location;
     (window as { location: Location }).location = {
       ...originalLocation,
-      href: 'https://twitter.com/user/status/123',
+      href: 'http://localhost:3000/user/status/123',
       pathname: '/user/status/123',
     } as Location;
   });
@@ -82,14 +82,15 @@ describe('UrlWatcher', () => {
       watcher.start();
 
       // Simulate URL change
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/456';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/456';
       (window.location as { pathname: string }).pathname = '/user/status/456';
+      history.pushState({}, '', '/user/status/456');
 
       // Advance timers to trigger check
       vi.advanceTimersByTime(300);
 
       expect(callback).toHaveBeenCalled();
-      expect(callback).toHaveBeenCalledWith('https://twitter.com/user/status/456');
+      expect(callback).toHaveBeenCalledWith('http://localhost:3000/user/status/456');
 
       watcher.stop();
     });
@@ -113,21 +114,24 @@ describe('UrlWatcher', () => {
       watcher.start();
 
       // Simulate rapid URL changes
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/1';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/1';
       (window.location as { pathname: string }).pathname = '/user/status/1';
+      history.pushState({}, '', '/user/status/1');
       vi.advanceTimersByTime(50);
 
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/2';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/2';
       (window.location as { pathname: string }).pathname = '/user/status/2';
+      history.pushState({}, '', '/user/status/2');
       vi.advanceTimersByTime(50);
 
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/3';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/3';
       (window.location as { pathname: string }).pathname = '/user/status/3';
+      history.pushState({}, '', '/user/status/3');
       vi.advanceTimersByTime(300);
 
       // Should only be called once with the final URL
       expect(callback).toHaveBeenCalledTimes(1);
-      expect(callback).toHaveBeenCalledWith('https://twitter.com/user/status/3');
+      expect(callback).toHaveBeenCalledWith('http://localhost:3000/user/status/3');
 
       watcher.stop();
     });
@@ -139,7 +143,8 @@ describe('UrlWatcher', () => {
       watcher.stop();
 
       // Simulate URL change after stopping
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/999';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/999';
+      history.pushState({}, '', '/user/status/999');
       vi.advanceTimersByTime(500);
 
       expect(callback).not.toHaveBeenCalled();
@@ -147,11 +152,13 @@ describe('UrlWatcher', () => {
 
     it('getCurrentUrl returns the current URL', () => {
       const watcher = new UrlWatcher();
-      expect(watcher.getCurrentUrl()).toBe('https://twitter.com/user/status/123');
+      expect(watcher.getCurrentUrl()).toBe('http://localhost:3000/user/status/123');
       watcher.stop();
     });
 
     it('isThreadUrl returns true for thread URLs', () => {
+      (window.location as { href: string }).href = 'https://twitter.com/user/status/123';
+      (window.location as { pathname: string }).pathname = '/user/status/123';
       const watcher = new UrlWatcher();
       expect(watcher.isThreadUrl()).toBe(true);
       watcher.stop();
@@ -172,13 +179,13 @@ describe('UrlWatcher', () => {
       watcher.start();
 
       // Simulate popstate (browser back/forward)
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/789';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/789';
       (window.location as { pathname: string }).pathname = '/user/status/789';
       window.dispatchEvent(new PopStateEvent('popstate'));
 
       vi.advanceTimersByTime(300);
 
-      expect(callback).toHaveBeenCalledWith('https://twitter.com/user/status/789');
+      expect(callback).toHaveBeenCalledWith('http://localhost:3000/user/status/789');
 
       watcher.stop();
     });
@@ -189,7 +196,8 @@ describe('UrlWatcher', () => {
       watcher.start();
 
       // Change query params only
-      (window.location as { href: string }).href = 'https://twitter.com/user/status/123?s=20';
+      (window.location as { href: string }).href = 'http://localhost:3000/user/status/123?s=20';
+      history.pushState({}, '', '/user/status/123?s=20');
       vi.advanceTimersByTime(300);
 
       // Path didn't change, callback should not be called

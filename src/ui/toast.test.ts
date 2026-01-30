@@ -67,7 +67,7 @@ describe('Toast Notifications', () => {
       vi.advanceTimersByTime(4500);
 
       // Toast should start dismiss animation
-      const toast = document.querySelector('.toast');
+      const toast = document.querySelector('.toast') as HTMLElement | null;
       expect(toast?.style.animation).toContain('toast-slide-out');
     });
 
@@ -77,7 +77,7 @@ describe('Toast Notifications', () => {
 
       vi.advanceTimersByTime(1500);
 
-      const toast = document.querySelector('.toast');
+      const toast = document.querySelector('.toast') as HTMLElement | null;
       expect(toast?.style.animation).toContain('toast-slide-out');
     });
 
@@ -87,7 +87,7 @@ describe('Toast Notifications', () => {
 
       dismissBtn.click();
 
-      const toast = document.querySelector('.toast');
+      const toast = document.querySelector('.toast') as HTMLElement | null;
       expect(toast?.style.animation).toContain('toast-slide-out');
     });
 

@@ -48,8 +48,10 @@ describe('Popup', () => {
     let controller: PopupController;
 
     beforeEach(() => {
+      mockTabs.query.mockResolvedValue([]);
       document.body.innerHTML = `
         <div id="translate-btn"></div>
+        <button id="toggle-panel-btn" class="hidden"></button>
         <div id="settings-btn"></div>
         <div id="main-view"></div>
         <div id="settings-view" class="hidden"></div>
@@ -206,6 +208,28 @@ describe('Popup', () => {
         expect(mockRuntime.sendMessage).not.toHaveBeenCalled();
         const statusEl = document.getElementById('status-message');
         expect(statusEl?.textContent).toContain('Not a Twitter page');
+      });
+    });
+
+    describe('togglePanel', () => {
+      it('sends toggle panel message to current Twitter tab', async () => {
+        mockTabs.query.mockResolvedValue([{ id: 456, url: 'https://twitter.com/home' }]);
+        mockTabs.sendMessage.mockResolvedValue({ success: true });
+
+        await controller.togglePanel();
+
+        expect(mockTabs.sendMessage).toHaveBeenCalledWith(456, {
+          type: 'TOGGLE_PANEL',
+        });
+      });
+
+      it('hides toggle panel button on non-Twitter pages', async () => {
+        mockTabs.query.mockResolvedValue([{ id: 456, url: 'https://example.com' }]);
+
+        await (controller as unknown as { updatePanelToggleVisibility: () => Promise<void> }).updatePanelToggleVisibility();
+
+        const toggleBtn = document.getElementById('toggle-panel-btn');
+        expect(toggleBtn?.classList.contains('hidden')).toBe(true);
       });
     });
 

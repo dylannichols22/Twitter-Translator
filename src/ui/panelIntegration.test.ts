@@ -5,10 +5,6 @@ import { destroyPanel } from './panel';
 // Mock browser APIs
 const mockRuntime = {
   sendMessage: vi.fn(),
-  onMessage: {
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-  },
 };
 
 const mockTabs = {
@@ -99,6 +95,7 @@ describe('PanelIntegration', () => {
       // Simulate URL change
       (window.location as { href: string }).href = 'https://twitter.com/user/status/456';
       (window.location as { pathname: string }).pathname = '/user/status/456';
+      window.dispatchEvent(new PopStateEvent('popstate'));
 
       vi.advanceTimersByTime(300);
 
@@ -114,23 +111,12 @@ describe('PanelIntegration', () => {
       // Navigate to non-thread
       (window.location as { href: string }).href = 'https://twitter.com/home';
       (window.location as { pathname: string }).pathname = '/home';
+      window.dispatchEvent(new PopStateEvent('popstate'));
 
       vi.advanceTimersByTime(300);
 
       const panel = document.querySelector('.twitter-translator-panel');
       expect(panel?.querySelector('.panel-empty')).not.toBeNull();
-      integration.destroy();
-    });
-  });
-
-  describe('Message Handling', () => {
-    it('responds to TOGGLE_PANEL message', () => {
-      const integration = new PanelIntegration();
-
-      // Simulate receiving a toggle message
-      // The integration registers a message listener
-      expect(mockRuntime.onMessage.addListener).toHaveBeenCalled();
-
       integration.destroy();
     });
   });

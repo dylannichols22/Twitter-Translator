@@ -1,4 +1,5 @@
 import { MESSAGE_TYPES } from '../messages';
+import { isTwitterUrl } from '../utils/twitter';
 
 export function formatCost(cost: number): string {
   return `$${cost.toFixed(2)}`;
@@ -6,6 +7,7 @@ export function formatCost(cost: number): string {
 
 export class PopupController {
   private translateBtn: HTMLElement | null;
+  private togglePanelBtn: HTMLElement | null;
   private settingsBtn: HTMLElement | null;
   private saveSettingsBtn: HTMLElement | null;
   private backBtn: HTMLElement | null;
@@ -20,6 +22,7 @@ export class PopupController {
 
   constructor() {
     this.translateBtn = document.getElementById('translate-btn');
+    this.togglePanelBtn = document.getElementById('toggle-panel-btn');
     this.settingsBtn = document.getElementById('settings-btn');
     this.saveSettingsBtn = document.getElementById('save-settings-btn');
     this.backBtn = document.getElementById('back-btn');
@@ -33,13 +36,31 @@ export class PopupController {
     this.statusMessage = document.getElementById('status-message');
 
     this.bindEvents();
+    void this.updatePanelToggleVisibility();
   }
 
   private bindEvents(): void {
     this.translateBtn?.addEventListener('click', () => this.translateCurrentPage());
+    this.togglePanelBtn?.addEventListener('click', () => this.togglePanel());
     this.settingsBtn?.addEventListener('click', () => this.showSettings());
     this.saveSettingsBtn?.addEventListener('click', () => this.saveSettings());
     this.backBtn?.addEventListener('click', () => this.showMain());
+  }
+
+  private async updatePanelToggleVisibility(): Promise<void> {
+    if (!this.togglePanelBtn) {
+      return;
+    }
+
+    try {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      const url = tabs[0]?.url ?? '';
+      const isTwitter = isTwitterUrl(url);
+      this.togglePanelBtn.classList.toggle('hidden', !isTwitter);
+    } catch (error) {
+      console.error('Failed to determine active tab:', error);
+      this.togglePanelBtn.classList.add('hidden');
+    }
   }
 
   async loadSettings(): Promise<void> {
@@ -86,7 +107,15 @@ export class PopupController {
   async saveSettings(): Promise<void> {
     try {
       const apiKey = this.apiKeyInput?.value || '';
-      const commentLimit = parseInt(this.commentLimitInput?.value || '10', 10);
+      const parsed = Number.parseInt(this.commentLimitInput?.value || '10', 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        this.showStatus('Comment limit must be a positive number');
+        if (this.commentLimitInput) {
+          this.commentLimitInput.value = '10';
+        }
+        return;
+      }
+      const commentLimit = parsed;
 
       await browser.runtime.sendMessage({
         type: MESSAGE_TYPES.SAVE_SETTINGS,
@@ -132,6 +161,32 @@ export class PopupController {
     } catch (error) {
       console.error('Failed to translate:', error);
       this.showStatus('Failed to start translation');
+    }
+  }
+
+  async togglePanel(): Promise<void> {
+    try {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      const tab = tabs[0];
+
+      if (!tab?.id) {
+        this.showStatus('No active tab found');
+        return;
+      }
+
+      if (!isTwitterUrl(tab.url || '')) {
+        this.showStatus('Open Twitter to toggle the panel');
+        return;
+      }
+
+      await browser.tabs.sendMessage(tab.id, {
+        type: MESSAGE_TYPES.TOGGLE_PANEL,
+      });
+
+      window.close();
+    } catch (error) {
+      console.error('Failed to toggle panel:', error);
+      this.showStatus('Failed to toggle panel');
     }
   }
 

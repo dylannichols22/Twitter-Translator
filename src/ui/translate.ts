@@ -1,109 +1,18 @@
-import { MESSAGE_TYPES } from '../messages';
+﻿import { MESSAGE_TYPES } from '../messages';
 import { translateQuickStreaming, getBreakdown } from '../translator';
-import type { QuickTranslation, Segment, Breakdown, UsageStats, TranslatedTweet } from '../translator';
+import type { QuickTranslation, Breakdown, UsageStats, TranslatedTweet } from '../translator';
 import type { Tweet } from '../scraper';
 import { estimateCost, calculateCost } from '../cost';
 import { formatCost } from '../popup/popup';
 import { renderSkeletonContainer } from './skeleton';
+import {
+  renderSegmentTable,
+  renderNotes,
+  groupSegmentsForTables,
+  renderBreakdownContent,
+} from './breakdown';
 
-export function renderSegmentTable(segments: Segment[]): HTMLTableElement {
-  const table = document.createElement('table');
-  table.className = 'segment-table';
-
-  // Row 1: Chinese characters
-  const chineseRow = table.insertRow();
-  chineseRow.className = 'chinese-row';
-  segments.forEach((seg) => {
-    const cell = chineseRow.insertCell();
-    cell.textContent = seg.chinese;
-  });
-
-  // Row 2: Pinyin
-  const pinyinRow = table.insertRow();
-  pinyinRow.className = 'pinyin-row';
-  segments.forEach((seg) => {
-    const cell = pinyinRow.insertCell();
-    cell.textContent = seg.pinyin;
-  });
-
-  // Row 3: Gloss
-  const glossRow = table.insertRow();
-  glossRow.className = 'gloss-row';
-  segments.forEach((seg) => {
-    const cell = glossRow.insertCell();
-    cell.textContent = seg.gloss;
-  });
-
-  return table;
-}
-
-export function renderNotes(notes: string[]): HTMLDivElement {
-  const container = document.createElement('div');
-  container.className = 'notes-section';
-
-  const heading = document.createElement('h4');
-  heading.textContent = 'Notes';
-  container.appendChild(heading);
-
-  if (notes.length === 0) {
-    const empty = document.createElement('p');
-    empty.textContent = 'No notes available';
-    empty.className = 'empty-notes';
-    container.appendChild(empty);
-    return container;
-  }
-
-  const list = document.createElement('ul');
-  notes.forEach((note) => {
-    const item = document.createElement('li');
-    item.textContent = note;
-    list.appendChild(item);
-  });
-  container.appendChild(list);
-
-  return container;
-}
-
-const SENTENCE_END = /[。！？!?…]+$/;
-
-export function groupSegmentsForTables(segments: Segment[], maxSegments = 8): Segment[][] {
-  const groups: Segment[][] = [];
-  let current: Segment[] = [];
-
-  const flush = () => {
-    if (current.length > 0) {
-      groups.push(current);
-      current = [];
-    }
-  };
-
-  for (const segment of segments) {
-    current.push(segment);
-
-    const endsSentence = SENTENCE_END.test(segment.chinese.trim()) || segment.chinese.includes('\n');
-    if (endsSentence || current.length >= maxSegments) {
-      flush();
-    }
-  }
-
-  flush();
-  return groups;
-}
-
-function renderBreakdownContent(breakdown: Breakdown): DocumentFragment {
-  const fragment = document.createDocumentFragment();
-  const groups = groupSegmentsForTables(breakdown.segments, 8);
-
-  for (const group of groups) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'segment-table-wrapper';
-    wrapper.appendChild(renderSegmentTable(group));
-    fragment.appendChild(wrapper);
-  }
-
-  fragment.appendChild(renderNotes(breakdown.notes));
-  return fragment;
-}
+export { renderSegmentTable, renderNotes, groupSegmentsForTables };
 
 const getGutterClass = (tweet: Tweet): string => {
   const hasGroupStart = typeof tweet.groupStart === 'boolean';
@@ -120,9 +29,15 @@ const getGutterClass = (tweet: Tweet): string => {
 export function renderTweet(
   tweet: Tweet,
   translation: QuickTranslation | TranslatedTweet,
-  onToggleBreakdown?: (article: HTMLElement, breakdown: HTMLElement) => void,
-  onLoadChildren?: (tweet: Tweet) => void
+  onToggleBreakdown?: (article: HTMLElement, breakdown: HTMLElement) => void
 ): HTMLElement {
+  const formatTimestamp = (timestampValue: string): string => {
+    if (!timestampValue) return '';
+    const parsed = new Date(timestampValue);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toLocaleString();
+  };
+
   const article = document.createElement('article');
   const inlineClass = tweet.inlineReply ? 'inline-reply' : '';
   const hasRepliesClass = tweet.hasReplies ? 'has-replies' : '';
@@ -161,8 +76,9 @@ export function renderTweet(
 
   const timestamp = document.createElement('span');
   timestamp.className = 'tweet-timestamp';
-  if (tweet.timestamp) {
-    timestamp.textContent = new Date(tweet.timestamp).toLocaleString();
+  const formattedTimestamp = formatTimestamp(tweet.timestamp);
+  if (formattedTimestamp) {
+    timestamp.textContent = formattedTimestamp;
   }
   header.appendChild(timestamp);
 
@@ -227,18 +143,6 @@ export function renderTweet(
   });
   actions.appendChild(breakdownToggle);
 
-  if (!tweet.isMainPost && tweet.hasReplies !== false) {
-    const loadChildren = document.createElement('button');
-    loadChildren.className = 'tweet-action-btn tweet-load-children';
-    loadChildren.type = 'button';
-    loadChildren.textContent = 'Show replies';
-    loadChildren.addEventListener('click', (event) => {
-      event.stopPropagation();
-      onLoadChildren?.(tweet);
-    });
-    actions.appendChild(loadChildren);
-  }
-
   body.appendChild(actions);
 
   shell.appendChild(body);
@@ -252,19 +156,18 @@ export class TranslateViewController {
   private loadingEl: HTMLElement | null;
   private errorEl: HTMLElement | null;
   private estimatedCostEl: HTMLElement | null;
-  private loadMoreBtn: HTMLButtonElement | null;
-  private backBtn: HTMLButtonElement | null;
   private tweets: Tweet[] = [];
   private sourceUrl = '';
   private apiKey = '';
-  private sourceTabId: number | null = null;
-  private historyStack: Array<{ tweets: Tweet[]; url: string; scrollTop: number }> = [];
   private totalUsage: UsageStats = { inputTokens: 0, outputTokens: 0 };
   private translatedIds: Set<string> = new Set();
   private knownTweetIds: Set<string> = new Set();
   private cachedTranslations: TranslatedTweet[] = [];
-  private commentLimit = 0;
-  private isLoadingMore = false;
+  private translationBuffer: Map<string, TranslatedTweet> = new Map();
+  private tweetIndexById: Map<string, number> = new Map();
+  private commentLimit: number | undefined;
+  private initPromise: Promise<void>;
+  private cachedTranslationById: Map<string, TranslatedTweet> = new Map();
 
   // Track which breakdowns have been loaded
   private breakdownCache: Map<string, Breakdown> = new Map();
@@ -275,44 +178,42 @@ export class TranslateViewController {
     this.loadingEl = document.getElementById('loading');
     this.errorEl = document.getElementById('error-message');
     this.estimatedCostEl = document.getElementById('estimated-cost');
-    this.loadMoreBtn = document.getElementById('load-more-btn') as HTMLButtonElement | null;
-    this.backBtn = document.querySelector('.nav-back') as HTMLButtonElement | null;
 
-    this.parseUrlParams();
-    this.initializeControls();
+    this.initPromise = this.loadInitialData();
   }
 
-  private parseUrlParams(): void {
+  private async loadInitialData(): Promise<void> {
     try {
       const params = new URLSearchParams(window.location.search);
+      const payloadKey = params.get('payloadKey');
+
+      if (payloadKey && typeof browser !== 'undefined') {
+        const payloadStorage = browser.storage?.session ?? browser.storage?.local;
+        const result = payloadStorage ? await payloadStorage.get([payloadKey]) : {};
+        const data = (result as Record<string, unknown>)[payloadKey] as
+          | { tweets?: Tweet[]; url?: string; sourceTabId?: number }
+          | undefined;
+        if (data) {
+          this.setThreadData(data.tweets ?? [], data.url ?? '');
+        }
+        await payloadStorage?.remove(payloadKey);
+        return;
+      }
+
       const dataStr = params.get('data');
       if (dataStr) {
-        const data = JSON.parse(decodeURIComponent(dataStr));
-        this.tweets = data.tweets || [];
-        this.sourceUrl = data.url || '';
-        this.sourceTabId = typeof data.sourceTabId === 'number' ? data.sourceTabId : null;
-        this.tweets.forEach((tweet) => {
-          if (tweet.id) {
-            this.knownTweetIds.add(tweet.id);
-          }
-        });
+        let parsed: { tweets?: Tweet[]; url?: string; sourceTabId?: number } | null = null;
+        try {
+          parsed = JSON.parse(dataStr);
+        } catch {
+          parsed = JSON.parse(decodeURIComponent(dataStr));
+        }
+        if (parsed) {
+          this.setThreadData(parsed.tweets ?? [], parsed.url ?? '');
+        }
       }
     } catch (error) {
       console.error('Failed to parse URL params:', error);
-    }
-  }
-
-  private initializeControls(): void {
-    if (this.loadMoreBtn) {
-      this.loadMoreBtn.addEventListener('click', () => {
-        void this.loadMoreReplies();
-      });
-    }
-    if (this.backBtn) {
-      this.backBtn.addEventListener('click', () => {
-        void this.goBack();
-      });
-      this.updateBackButton();
     }
   }
 
@@ -375,29 +276,44 @@ export class TranslateViewController {
   private renderQuickTweet(tweet: Tweet, translation: QuickTranslation): HTMLElement {
     return renderTweet(tweet, translation, (article, breakdown) => {
       void this.toggleBreakdown(article, tweet, breakdown);
-    }, (targetTweet) => {
-      void this.openReplyThread(targetTweet);
     });
   }
 
   private renderCachedTweet(tweet: Tweet, translation: TranslatedTweet): HTMLElement {
     return renderTweet(tweet, translation, (article, breakdown) => {
       void this.toggleBreakdown(article, tweet, breakdown);
-    }, (targetTweet) => {
-      void this.openReplyThread(targetTweet);
     });
   }
 
-  private appendTranslation(tweet: Tweet, translation: QuickTranslation | TranslatedTweet): void {
+  private renderTranslationInOrder(tweet: Tweet, translation: QuickTranslation | TranslatedTweet): void {
     if (!this.tweetsContainer) return;
+    const existing = this.tweetsContainer.querySelector(
+      `.tweet-card[data-tweet-id="${tweet.id}"]`
+    );
+    if (existing) return;
+
     const element = 'segments' in translation
       ? this.renderCachedTweet(tweet, translation)
       : this.renderQuickTweet(tweet, translation);
-    this.tweetsContainer.appendChild(element);
+
+    const targetIndex = this.tweetIndexById.get(tweet.id) ?? Number.MAX_SAFE_INTEGER;
+    const cards = Array.from(this.tweetsContainer.querySelectorAll<HTMLElement>('.tweet-card'));
+    const next = cards.find((card) => {
+      const id = card.dataset.tweetId ?? '';
+      const index = this.tweetIndexById.get(id) ?? Number.MAX_SAFE_INTEGER;
+      return index > targetIndex;
+    });
+
+    if (next) {
+      this.tweetsContainer.insertBefore(element, next);
+    } else {
+      this.tweetsContainer.appendChild(element);
+    }
   }
 
   private async toggleBreakdown(article: HTMLElement, tweet: Tweet, breakdownEl: HTMLElement): Promise<void> {
     const isExpanding = breakdownEl.classList.contains('hidden');
+    const cachedTranslation = this.cachedTranslationById.get(tweet.id);
 
     // Accordion: collapse currently expanded card if different
     if (isExpanding && this.currentlyExpanded && this.currentlyExpanded !== article) {
@@ -413,6 +329,21 @@ export class TranslateViewController {
 
       // Check if breakdown already loaded
       if (!this.breakdownCache.has(tweet.id)) {
+        if (cachedTranslation && cachedTranslation.segments.length > 0) {
+          this.breakdownCache.set(tweet.id, {
+            segments: cachedTranslation.segments,
+            notes: cachedTranslation.notes,
+          });
+        }
+      }
+
+      if (!this.breakdownCache.has(tweet.id)) {
+        if (!this.apiKey) {
+          breakdownInner.innerHTML = '<div class="breakdown-error">API key is required for breakdowns</div>';
+          breakdownEl.classList.remove('hidden');
+          article.classList.add('expanded');
+          return;
+        }
         // Show loading state
         breakdownInner.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
         breakdownEl.classList.remove('hidden');
@@ -442,6 +373,12 @@ export class TranslateViewController {
 
           // Cache the breakdown
           this.breakdownCache.set(tweet.id, result.breakdown);
+          this.cachedTranslationById.set(tweet.id, {
+            id: tweet.id,
+            naturalTranslation: cachedTranslation?.naturalTranslation ?? '',
+            segments: result.breakdown.segments,
+            notes: result.breakdown.notes,
+          });
 
           // Render breakdown
           breakdownInner.innerHTML = '';
@@ -469,14 +406,26 @@ export class TranslateViewController {
   }
 
   async translate(): Promise<void> {
+    await this.initPromise;
+
     if (this.tweets.length === 0) {
       this.showError('No tweets to translate');
       return;
     }
 
+    const settings = await browser.runtime.sendMessage({
+      type: MESSAGE_TYPES.GET_SETTINGS,
+    });
+
+    this.apiKey = settings?.apiKey ?? '';
+    this.commentLimit = typeof settings?.commentLimit === 'number' ? settings.commentLimit : undefined;
+
     const cached = await browser.runtime.sendMessage({
       type: MESSAGE_TYPES.GET_CACHED_TRANSLATION,
-      data: this.sourceUrl,
+      data: {
+        url: this.sourceUrl,
+        commentLimit: this.commentLimit,
+      },
     });
 
     if (cached && this.tweetsContainer) {
@@ -485,33 +434,34 @@ export class TranslateViewController {
         usage: UsageStats;
       };
       this.tweetsContainer.innerHTML = '';
-      this.cachedTranslations = cachedResult.translations;
-      for (const translation of cachedResult.translations) {
-        const tweet = this.tweets.find((t) => t.id === translation.id);
-        if (tweet) {
-          this.appendTranslation(tweet, translation);
-          this.translatedIds.add(translation.id);
+      this.cachedTranslations = [];
+      this.cachedTranslationById.clear();
+      const byId = new Map(cachedResult.translations.map((t) => [t.id, t]));
+      for (const tweet of this.tweets) {
+        const translation = byId.get(tweet.id);
+        if (!translation) continue;
+        this.renderTranslationInOrder(tweet, translation);
+        this.translatedIds.add(translation.id);
+        this.cachedTranslations.push(translation);
+        this.cachedTranslationById.set(translation.id, translation);
+        if (translation.segments.length > 0) {
+          this.breakdownCache.set(translation.id, {
+            segments: translation.segments,
+            notes: translation.notes,
+          });
         }
       }
       this.totalUsage = cachedResult.usage;
       this.updateCostDisplay();
       this.showLoading(false);
-      this.showLoadMore(true);
       return;
     }
 
     // Get API key
-    const settings = await browser.runtime.sendMessage({
-      type: MESSAGE_TYPES.GET_SETTINGS,
-    });
-
-    if (!settings.apiKey) {
+    if (!this.apiKey) {
       this.showError('Please set your API key in the extension settings');
       return;
     }
-
-    this.apiKey = settings.apiKey;
-    this.commentLimit = settings.commentLimit ?? 0;
 
     this.showLoading(true);
     this.showEstimatedCost();
@@ -523,20 +473,23 @@ export class TranslateViewController {
 
     this.totalUsage = { inputTokens: 0, outputTokens: 0 };
     this.cachedTranslations = [];
+    this.translationBuffer.clear();
 
     await translateQuickStreaming(this.tweets, this.apiKey, {
       onTranslation: (translation) => {
         const tweet = this.tweets.find((t) => t.id === translation.id);
         if (tweet && this.tweetsContainer) {
-          this.appendTranslation(tweet, translation);
+          this.renderTranslationInOrder(tweet, translation);
         }
         this.translatedIds.add(translation.id);
-        this.cachedTranslations.push({
+        const cachedTranslation: TranslatedTweet = {
           id: translation.id,
           naturalTranslation: translation.naturalTranslation,
           segments: [],
           notes: [],
-        });
+        };
+        this.translationBuffer.set(translation.id, cachedTranslation);
+        this.cachedTranslationById.set(translation.id, cachedTranslation);
         // Hide loading after first result
         this.showLoading(false);
       },
@@ -558,13 +511,15 @@ export class TranslateViewController {
           type: MESSAGE_TYPES.CACHE_TRANSLATION,
           data: {
             url: this.sourceUrl,
+            commentLimit: this.commentLimit,
             translation: {
-              translations: this.cachedTranslations,
+              translations: this.tweets
+                .map((tweet) => this.translationBuffer.get(tweet.id))
+                .filter((entry): entry is TranslatedTweet => !!entry),
               usage,
             },
           },
         });
-        this.showLoadMore(true);
       },
       onError: (error) => {
         this.showLoading(false);
@@ -573,70 +528,11 @@ export class TranslateViewController {
     });
   }
 
-  private showLoadMore(show: boolean): void {
-    if (!this.loadMoreBtn) return;
-    this.loadMoreBtn.classList.toggle('hidden', !show);
-  }
-
-  private showOverlayLoading(show: boolean): void {
-    if (this.loadingEl) {
-      this.loadingEl.classList.toggle('hidden', !show);
-    }
-    document.body?.classList.toggle('loading-overlay', show);
-  }
-
-  private updateBackButton(): void {
-    if (!this.backBtn) return;
-    this.backBtn.disabled = this.historyStack.length === 0;
-    this.backBtn.classList.toggle('disabled', this.historyStack.length === 0);
-  }
-
-  private resetTranslationState(): void {
-    this.totalUsage = { inputTokens: 0, outputTokens: 0 };
-    this.translatedIds.clear();
-    this.cachedTranslations = [];
-    this.breakdownCache.clear();
-    this.currentlyExpanded = null;
-  }
-
   private setThreadData(tweets: Tweet[], url: string): void {
     this.tweets = tweets;
     this.sourceUrl = url;
     this.knownTweetIds = new Set(tweets.map((tweet) => tweet.id));
-  }
-
-  private pushHistory(): void {
-    const scrollTop = window.scrollY || document.documentElement.scrollTop || 0;
-    this.historyStack.push({
-      tweets: this.tweets,
-      url: this.sourceUrl,
-      scrollTop,
-    });
-    this.updateBackButton();
-  }
-
-  private async goBack(): Promise<void> {
-    const previous = this.historyStack.pop();
-    if (!previous) return;
-
-    if (this.sourceTabId) {
-      await browser.runtime.sendMessage({
-        type: MESSAGE_TYPES.NAVIGATE_TAB,
-        data: { tabId: this.sourceTabId, url: previous.url },
-      });
-    }
-
-    this.updateBackButton();
-    this.resetTranslationState();
-    if (this.tweetsContainer) {
-      this.tweetsContainer.innerHTML = '';
-    }
-    this.setThreadData(previous.tweets, previous.url);
-    await this.translate();
-
-    requestAnimationFrame(() => {
-      window.scrollTo(0, previous.scrollTop);
-    });
+    this.tweetIndexById = new Map(tweets.map((tweet, index) => [tweet.id, index]));
   }
 
   private mergeTweets(newTweets: Tweet[]): void {
@@ -644,6 +540,7 @@ export class TranslateViewController {
       if (!this.knownTweetIds.has(tweet.id)) {
         this.knownTweetIds.add(tweet.id);
         this.tweets.push(tweet);
+        this.tweetIndexById.set(tweet.id, this.tweets.length - 1);
       }
     });
   }
@@ -665,15 +562,17 @@ export class TranslateViewController {
       onTranslation: (translation) => {
         const tweet = newTweets.find((t) => t.id === translation.id);
         if (tweet) {
-          this.appendTranslation(tweet, translation);
+          this.renderTranslationInOrder(tweet, translation);
         }
         this.translatedIds.add(translation.id);
-        this.cachedTranslations.push({
+        const cachedTranslation: TranslatedTweet = {
           id: translation.id,
           naturalTranslation: translation.naturalTranslation,
           segments: [],
           notes: [],
-        });
+        };
+        this.translationBuffer.set(translation.id, cachedTranslation);
+        this.cachedTranslationById.set(translation.id, cachedTranslation);
         this.showLoading(false);
       },
       onComplete: async (usage) => {
@@ -694,8 +593,11 @@ export class TranslateViewController {
           type: MESSAGE_TYPES.CACHE_TRANSLATION,
           data: {
             url: this.sourceUrl,
+            commentLimit: this.commentLimit,
             translation: {
-              translations: this.cachedTranslations,
+              translations: this.tweets
+                .map((tweet) => this.translationBuffer.get(tweet.id))
+                .filter((entry): entry is TranslatedTweet => !!entry),
               usage: this.totalUsage,
             },
           },
@@ -708,161 +610,7 @@ export class TranslateViewController {
     });
   }
 
-  private async loadMoreReplies(): Promise<void> {
-    if (this.isLoadingMore || !this.sourceUrl) return;
-    this.isLoadingMore = true;
-    if (this.loadMoreBtn) {
-      this.loadMoreBtn.disabled = true;
-    }
-
-    const nextLimit = (this.commentLimit || this.tweets.length) + 10;
-    this.commentLimit = nextLimit;
-
-    const response = await browser.runtime.sendMessage({
-      type: MESSAGE_TYPES.SCRAPE_MORE,
-      data: {
-        url: this.sourceUrl,
-        commentLimit: nextLimit,
-        excludeIds: Array.from(this.knownTweetIds),
-        scrollToLoadMore: true,
-        scrollMaxRounds: 20,
-        scrollIdleRounds: 4,
-      },
-    });
-
-    if (!response?.success || !response.tweets) {
-      this.showError(response?.error || 'Failed to load more replies');
-      this.isLoadingMore = false;
-      if (this.loadMoreBtn) {
-        this.loadMoreBtn.disabled = false;
-      }
-      return;
-    }
-
-    const responseTweets = response.tweets as Tweet[];
-    const freshTweets = responseTweets.filter((tweet) => !this.knownTweetIds.has(tweet.id));
-    if (freshTweets.length === 0) {
-      this.showLoadMore(false);
-      this.isLoadingMore = false;
-      if (this.loadMoreBtn) {
-        this.loadMoreBtn.disabled = false;
-      }
-      return;
-    }
-
-    this.mergeTweets(freshTweets);
-    const untranslated = freshTweets.filter((tweet) => !this.translatedIds.has(tweet.id));
-
-    if (untranslated.length === 0) {
-      this.showLoadMore(false);
-      this.isLoadingMore = false;
-      if (this.loadMoreBtn) {
-        this.loadMoreBtn.disabled = false;
-      }
-      return;
-    }
-
-    await this.translateNewTweets(untranslated);
-
-    this.isLoadingMore = false;
-    if (this.loadMoreBtn) {
-      this.loadMoreBtn.disabled = false;
-    }
-  }
-
-  private async openReplyThread(parentTweet: Tweet): Promise<void> {
-    if (this.isLoadingMore) return;
-
-    if (!parentTweet.url) {
-      this.showError('No reply thread available for this post');
-      return;
-    }
-
-    if (this.sourceTabId) {
-      this.isLoadingMore = true;
-      const replyLimit = this.commentLimit > 0 ? this.commentLimit : undefined;
-
-      this.pushHistory();
-      this.showOverlayLoading(true);
-
-      const response = await browser.runtime.sendMessage({
-        type: MESSAGE_TYPES.NAVIGATE_AND_SCRAPE,
-        data: {
-          tabId: this.sourceTabId,
-          url: parentTweet.url,
-          commentLimit: replyLimit,
-        },
-      });
-
-      if (!response?.success || !response.tweets) {
-        this.showError(response?.error || 'Failed to open reply thread');
-        this.historyStack.pop();
-        this.updateBackButton();
-        this.showOverlayLoading(false);
-        this.isLoadingMore = false;
-        return;
-      }
-
-      const responseTweets = response.tweets as Tweet[];
-      const childReplies = responseTweets.filter((tweet) => !tweet.isMainPost);
-      if (responseTweets.length === 0 || childReplies.length === 0) {
-        this.showError('No replies to show');
-        this.historyStack.pop();
-        this.updateBackButton();
-        this.showOverlayLoading(false);
-        this.isLoadingMore = false;
-        return;
-      }
-
-      this.resetTranslationState();
-      if (this.tweetsContainer) {
-        this.tweetsContainer.innerHTML = '';
-      }
-      this.setThreadData(responseTweets, response.url || parentTweet.url);
-      this.showLoadMore(true);
-      this.showOverlayLoading(false);
-      await this.translate();
-      this.isLoadingMore = false;
-      return;
-    }
-
-    this.isLoadingMore = true;
-
-    const replyLimit = this.commentLimit > 0 ? this.commentLimit : undefined;
-
-    const response = await browser.runtime.sendMessage({
-      type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
-      data: {
-        url: this.sourceUrl,
-        threadUrl: parentTweet.url,
-        commentLimit: replyLimit,
-      },
-    });
-
-    if (!response?.success || !response.tweets) {
-      this.showError(response?.error || 'Failed to open reply thread');
-      this.isLoadingMore = false;
-      return;
-    }
-
-    const responseTweets = response.tweets as Tweet[];
-    const childReplies = responseTweets.filter((tweet) => !tweet.isMainPost);
-    if (responseTweets.length === 0 || childReplies.length === 0) {
-      this.showError('No replies to show');
-      this.isLoadingMore = false;
-      return;
-    }
-
-    await browser.runtime.sendMessage({
-      type: MESSAGE_TYPES.OPEN_TRANSLATE_PAGE,
-      data: {
-        tweets: responseTweets,
-        url: parentTweet.url,
-      },
-    });
-
-    this.isLoadingMore = false;
-  }
+  // Reply-thread navigation intentionally removed for now to avoid janky UX.
 }
 
 // Initialize when DOM is ready
@@ -875,3 +623,4 @@ if (typeof document !== 'undefined' && document.readyState !== 'loading') {
     controller.translate();
   });
 }
+

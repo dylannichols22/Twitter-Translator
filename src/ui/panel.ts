@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Side Panel for Twitter Translator
  * Renders as a right-side drawer overlaying Twitter content.
  */
@@ -18,6 +18,12 @@ export function createPanel(): HTMLElement {
   const panel = document.createElement('div');
   panel.className = 'twitter-translator-panel';
 
+  // Resize handle (left edge)
+  const resizeHandle = document.createElement('div');
+  resizeHandle.className = 'panel-resize-handle';
+  resizeHandle.setAttribute('aria-hidden', 'true');
+  panel.appendChild(resizeHandle);
+
   // Header
   const header = document.createElement('div');
   header.className = 'panel-header';
@@ -30,7 +36,7 @@ export function createPanel(): HTMLElement {
   const closeBtn = document.createElement('button');
   closeBtn.className = 'panel-close-btn';
   closeBtn.type = 'button';
-  closeBtn.textContent = '×';
+  closeBtn.textContent = 'x';
   closeBtn.setAttribute('aria-label', 'Close panel');
   closeBtn.addEventListener('click', () => {
     togglePanel();
@@ -47,10 +53,49 @@ export function createPanel(): HTMLElement {
   // Footer
   const footer = document.createElement('div');
   footer.className = 'panel-footer';
+  const footerUsage = document.createElement('div');
+  footerUsage.className = 'panel-footer-usage';
+  footer.appendChild(footerUsage);
+  const loadMoreBtn = document.createElement('button');
+  loadMoreBtn.className = 'panel-load-more';
+  loadMoreBtn.type = 'button';
+  loadMoreBtn.textContent = 'Load more replies';
+  footer.appendChild(loadMoreBtn);
   panel.appendChild(footer);
 
   document.body.appendChild(panel);
   panelInstance = panel;
+
+  const clampWidth = (value: number): number => {
+    const minWidth = 360;
+    const maxWidth = Math.min(window.innerWidth * 0.8, 720);
+    return Math.max(minWidth, Math.min(maxWidth, value));
+  };
+
+  const startResize = (event: PointerEvent) => {
+    event.preventDefault();
+    resizeHandle.setPointerCapture(event.pointerId);
+    document.body.classList.add('tt-panel-resizing');
+
+    const handleMove = (moveEvent: PointerEvent) => {
+      const nextWidth = clampWidth(window.innerWidth - moveEvent.clientX);
+      panel.style.width = `${nextWidth}px`;
+    };
+
+    const stopResize = (upEvent: PointerEvent) => {
+      resizeHandle.releasePointerCapture(upEvent.pointerId);
+      document.body.classList.remove('tt-panel-resizing');
+      resizeHandle.removeEventListener('pointermove', handleMove);
+      resizeHandle.removeEventListener('pointerup', stopResize);
+      resizeHandle.removeEventListener('pointercancel', stopResize);
+    };
+
+    resizeHandle.addEventListener('pointermove', handleMove);
+    resizeHandle.addEventListener('pointerup', stopResize);
+    resizeHandle.addEventListener('pointercancel', stopResize);
+  };
+
+  resizeHandle.addEventListener('pointerdown', startResize);
 
   return panel;
 }
@@ -211,18 +256,28 @@ export class SidePanel {
     return this.element.querySelector('.panel-footer');
   }
 
+  getFooterUsage(): HTMLElement | null {
+    return this.element.querySelector('.panel-footer-usage');
+  }
+
+  getLoadMoreButton(): HTMLButtonElement | null {
+    return this.element.querySelector('.panel-load-more') as HTMLButtonElement | null;
+  }
+
   /**
    * Sets the footer content.
    */
   setFooterContent(content: string | HTMLElement): void {
-    const footer = this.getFooter();
-    if (!footer) return;
+    const usage = this.getFooterUsage();
+    if (!usage) return;
 
     if (typeof content === 'string') {
-      footer.textContent = content;
+      usage.textContent = content;
     } else {
-      footer.innerHTML = '';
-      footer.appendChild(content);
+      usage.innerHTML = '';
+      usage.appendChild(content);
     }
   }
 }
+
+

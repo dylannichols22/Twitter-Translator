@@ -1,5 +1,7 @@
 import { scrapeTweets, Tweet, ScrapeOptions } from './scraper';
 import { MESSAGE_TYPES, Message } from './messages';
+import { PanelIntegration } from './ui/panelIntegration';
+import { isTwitterUrl } from './utils/twitter';
 
 interface ScrapeResponse {
   success: boolean;
@@ -8,11 +10,34 @@ interface ScrapeResponse {
   error?: string;
 }
 
-function isTwitterUrl(url: string): boolean {
-  return url.includes('twitter.com') || url.includes('x.com');
-}
+let lastContextTweetUrl: string | null = null;
+
+const findPrimaryStatusLink = (article: Element): HTMLAnchorElement | null => {
+  const timeLinks = Array.from(article.querySelectorAll('time'))
+    .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
+    .filter((link): link is HTMLAnchorElement => !!link);
+
+  for (const link of timeLinks) {
+    if (link.closest('article[data-testid="tweet"]') === article) {
+      return link;
+    }
+  }
+
+  const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
+    .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
+    .filter((link) => link.closest('article[data-testid="tweet"]') === article);
+
+  return links[0] ?? null;
+};
 
 export async function handleMessage(message: Message): Promise<ScrapeResponse | undefined> {
+  if (message.type === MESSAGE_TYPES.GET_CONTEXT_TWEET_URL) {
+    return {
+      success: true,
+      url: lastContextTweetUrl || window.location.href,
+    };
+  }
+
   if (message.type !== MESSAGE_TYPES.SCRAPE_PAGE) {
     return undefined;
   }
@@ -131,6 +156,10 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
       const clickShowReplies = (): number => {
         const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
         const showReplies = buttons.filter((button) => {
+          const testId = button.getAttribute('data-testid') ?? '';
+          if (testId === 'showMoreReplies' || testId === 'showReplies') {
+            return true;
+          }
           const text = button.textContent?.toLowerCase() ?? '';
           return text.includes('show replies') || text.includes('show more replies');
         });
@@ -230,6 +259,32 @@ export class ContentScriptHandler {
         return true; // Keep channel open for async response
       }
     );
+
+    document.addEventListener('contextmenu', (event) => {
+      const target = event.target as Element | null;
+      if (!target) {
+        lastContextTweetUrl = null;
+        return;
+      }
+      let article = target.closest('article[data-testid="tweet"]');
+      const parentArticle = article?.parentElement?.closest('article[data-testid="tweet"]') ?? null;
+      if (parentArticle) {
+        article = parentArticle;
+      }
+      if (!article) {
+        lastContextTweetUrl = null;
+        return;
+      }
+      const link = findPrimaryStatusLink(article);
+      const href = link?.getAttribute('href') ?? '';
+      if (!href) {
+        lastContextTweetUrl = null;
+        return;
+      }
+      lastContextTweetUrl = href.startsWith('http')
+        ? href
+        : `${window.location.origin}${href}`;
+    });
   }
 
   async scrapePage(): Promise<ScrapeResponse> {
@@ -265,6 +320,16 @@ export class ContentScriptHandler {
   }
 }
 
+// Panel integration instance (lazy initialized)
+let panelIntegration: PanelIntegration | null = null;
+
+function getPanelIntegration(): PanelIntegration {
+  if (!panelIntegration) {
+    panelIntegration = new PanelIntegration();
+  }
+  return panelIntegration;
+}
+
 // Initialize content script when loaded
 if (typeof browser !== 'undefined' && browser.runtime) {
   new ContentScriptHandler();
@@ -273,5 +338,14 @@ if (typeof browser !== 'undefined' && browser.runtime) {
   // Smoke test signal - notify background script which has chrome privileges for dump()
   browser.runtime.sendMessage({ type: MESSAGE_TYPES.SMOKE_PING }).catch(() => {
     // Ignore errors - this is just for smoke testing
+  });
+
+  // Listen for panel toggle messages
+  browser.runtime.onMessage.addListener((message: Message) => {
+    if (message.type === MESSAGE_TYPES.TOGGLE_PANEL) {
+      getPanelIntegration().toggle();
+      return Promise.resolve({ success: true });
+    }
+    return undefined;
   });
 }

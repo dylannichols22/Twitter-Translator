@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -234,7 +234,7 @@
     }
 
     .tweet-header::after {
-      content: "▾";
+      content: "v";
       font-size: 12px;
       color: var(--muted);
       transition: transform 0.2s;
@@ -425,24 +425,6 @@
       text-align: center;
       padding: 32px 16px;
       color: var(--muted);
-    }
-
-    .load-more-btn {
-      display: block;
-      width: 100%;
-      margin: 12px 0 24px;
-      padding: 12px 16px;
-      border-radius: 999px;
-      border: 1px solid var(--border);
-      background: transparent;
-      color: var(--accent);
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .load-more-btn:hover {
-      background: rgba(29, 155, 240, 0.1);
     }
 
     /* Skeleton Loading States */
@@ -671,7 +653,7 @@
 <body>
   <div class="header">
     <div class="nav">
-      <button class="nav-back" type="button" aria-label="Back"></button>
+      <button class="nav-back disabled" type="button" aria-label="Back" disabled></button>
       <div class="nav-title">
         <h1>Post</h1>
         <div id="estimated-cost"></div>
@@ -687,8 +669,9 @@
   <div id="error-message" class="hidden"></div>
 
   <div id="tweets-container"></div>
-  <button id="load-more-btn" class="load-more-btn hidden">Load more replies</button>
 
   <script type="module" src="src/ui/translate.ts"></script>
 </body>
 </html>
+
+

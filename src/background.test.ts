@@ -14,9 +14,13 @@ const mockTabs = {
   sendMessage: vi.fn(),
   remove: vi.fn(),
   update: vi.fn(),
+  get: vi.fn(),
   onUpdated: {
     addListener: vi.fn(),
     removeListener: vi.fn(),
+  },
+  onActivated: {
+    addListener: vi.fn(),
   },
 };
 
@@ -36,6 +40,18 @@ const mockStorage = {
     set: vi.fn().mockResolvedValue(undefined),
     remove: vi.fn().mockResolvedValue(undefined),
   },
+  session: {
+    get: vi.fn().mockResolvedValue({}),
+    set: vi.fn().mockResolvedValue(undefined),
+    remove: vi.fn().mockResolvedValue(undefined),
+  },
+};
+
+const mockBrowserAction = {
+  onClicked: {
+    addListener: vi.fn(),
+  },
+  setPopup: vi.fn(),
 };
 
 // Set up browser mock - but note background.ts checks if browser is defined
@@ -45,6 +61,7 @@ const mockStorage = {
   tabs: mockTabs,
   runtime: mockRuntime,
   storage: mockStorage,
+  browserAction: mockBrowserAction,
 };
 
 import {
@@ -52,6 +69,7 @@ import {
   createContextMenu,
   handleContextMenuClick,
   handleMessage,
+  handleBrowserActionClick,
   MESSAGE_TYPES,
   Message,
   initializeExtension,
@@ -82,16 +100,17 @@ describe('Background Script', () => {
       expect(mockRuntime.onInstalled.addListener).toHaveBeenCalled();
       expect(mockContextMenus.onClicked.addListener).toHaveBeenCalled();
       expect(mockRuntime.onMessage.addListener).toHaveBeenCalled();
+      expect(mockBrowserAction.onClicked.addListener).toHaveBeenCalled();
     });
   });
 
   describe('handleContextMenuClick', () => {
-    it('sends scrape message to active tab', async () => {
-      mockTabs.query.mockResolvedValue([{ id: 123 }]);
-      mockTabs.sendMessage.mockResolvedValue({
-        success: true,
-        tweets: [{ id: '1', text: '你好' }],
+    it('sends toggle panel message to active tab', async () => {
+      mockTabs.onUpdated.addListener.mockImplementation((listener: (tabId: number, info: { status?: string }) => void) => {
+        listener(123, { status: 'complete' });
       });
+      mockTabs.sendMessage.mockResolvedValueOnce({ url: 'https://twitter.com/user/status/1' });
+      mockTabs.sendMessage.mockResolvedValue({ success: true });
 
       await handleContextMenuClick(
         { menuItemId: CONTEXT_MENU_ID },
@@ -99,28 +118,11 @@ describe('Background Script', () => {
       );
 
       expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
-        type: MESSAGE_TYPES.SCRAPE_PAGE,
+        type: MESSAGE_TYPES.GET_CONTEXT_TWEET_URL,
       });
-    });
-
-    it('opens translation page with scraped data', async () => {
-      mockTabs.query.mockResolvedValue([{ id: 123 }]);
-      mockTabs.sendMessage.mockResolvedValue({
-        success: true,
-        tweets: [{ id: '1', text: '你好' }],
-        url: 'https://twitter.com/user/status/1',
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
+        type: MESSAGE_TYPES.TOGGLE_PANEL,
       });
-
-      await handleContextMenuClick(
-        { menuItemId: CONTEXT_MENU_ID },
-        { id: 123, url: 'https://twitter.com/user/status/1' }
-      );
-
-      expect(mockTabs.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          url: expect.stringContaining('translate.html'),
-        })
-      );
     });
 
     it('ignores clicks on wrong menu item', async () => {
@@ -139,6 +141,57 @@ describe('Background Script', () => {
     });
   });
 
+  describe('handleBrowserActionClick', () => {
+    it('sends toggle panel message to Twitter tabs', async () => {
+      mockTabs.sendMessage.mockResolvedValue({ success: true });
+
+      await handleBrowserActionClick({
+        id: 123,
+        url: 'https://twitter.com/user/status/1',
+      });
+
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
+        type: MESSAGE_TYPES.TOGGLE_PANEL,
+      });
+    });
+
+    it('sends toggle panel message to X.com tabs', async () => {
+      mockTabs.sendMessage.mockResolvedValue({ success: true });
+
+      await handleBrowserActionClick({
+        id: 123,
+        url: 'https://x.com/user/status/1',
+      });
+
+      expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
+        type: MESSAGE_TYPES.TOGGLE_PANEL,
+      });
+    });
+
+    it('does not send message to non-Twitter tabs', async () => {
+      await handleBrowserActionClick({
+        id: 123,
+        url: 'https://example.com',
+      });
+
+      expect(mockTabs.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('handles missing tab id gracefully', async () => {
+      await expect(
+        handleBrowserActionClick({ url: 'https://twitter.com' })
+      ).resolves.not.toThrow();
+    });
+
+    it('handles errors gracefully', async () => {
+      mockTabs.sendMessage.mockRejectedValue(new Error('Content script not loaded'));
+
+      await expect(
+        handleBrowserActionClick({ id: 123, url: 'https://twitter.com' })
+      ).resolves.not.toThrow();
+    });
+  });
+
   describe('handleMessage', () => {
     it('handles OPEN_TRANSLATE_PAGE message', async () => {
       const message: Message = {
@@ -151,6 +204,7 @@ describe('Background Script', () => {
 
       await handleMessage(message, {}, vi.fn());
 
+      expect(mockStorage.session.set).toHaveBeenCalled();
       expect(mockTabs.create).toHaveBeenCalledWith(
         expect.objectContaining({
           url: expect.stringContaining('translate.html'),
@@ -201,108 +255,6 @@ describe('Background Script', () => {
       });
       expect(result).toEqual({ success: true, tweets: [] });
     });
-
-    it('forwards SCRAPE_CHILD_REPLIES to content script', async () => {
-      mockTabs.query.mockResolvedValue([{ id: 123, url: 'https://twitter.com/user/status/1' }]);
-      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
-
-      const message: Message = {
-        type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
-        data: {
-          url: 'https://twitter.com/user/status/1',
-          excludeIds: ['1'],
-        },
-      };
-
-      const result = await handleMessage(message, {}, vi.fn());
-
-      expect(mockTabs.sendMessage).toHaveBeenCalledWith(123, {
-        type: MESSAGE_TYPES.SCRAPE_PAGE,
-        data: {
-          commentLimit: undefined,
-          excludeIds: ['1'],
-        },
-      });
-      expect(result).toEqual({ success: true, tweets: [] });
-    });
-
-    it('opens a thread tab when SCRAPE_CHILD_REPLIES provides threadUrl', async () => {
-      mockTabs.create.mockResolvedValue({ id: 456 });
-      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
-      mockTabs.onUpdated.addListener.mockImplementation((listener: (tabId: number, info: { status?: string }) => void) => {
-        listener(456, { status: 'complete' });
-      });
-
-      const message: Message = {
-        type: MESSAGE_TYPES.SCRAPE_CHILD_REPLIES,
-        data: {
-          url: 'https://twitter.com/user/status/1',
-          threadUrl: 'https://twitter.com/user/status/42',
-          excludeIds: ['1'],
-        },
-      };
-
-      const result = await handleMessage(message, {}, vi.fn());
-
-      expect(mockTabs.create).toHaveBeenCalledWith({ url: 'https://twitter.com/user/status/42', active: false });
-      expect(mockTabs.sendMessage).toHaveBeenCalledWith(456, {
-        type: MESSAGE_TYPES.SCRAPE_PAGE,
-        data: {
-          commentLimit: undefined,
-          excludeIds: ['1'],
-          expandReplies: true,
-        },
-      });
-      expect(mockTabs.remove).toHaveBeenCalledWith(456);
-      expect(result).toEqual({ success: true, tweets: [] });
-    });
-
-    it('navigates and scrapes in the source tab', async () => {
-      mockTabs.update.mockResolvedValue({ id: 789 });
-      mockTabs.sendMessage.mockResolvedValue({ success: true, tweets: [] });
-      mockTabs.onUpdated.addListener.mockImplementation((listener: (tabId: number, info: { status?: string }) => void) => {
-        listener(789, { status: 'complete' });
-      });
-
-      const message: Message = {
-        type: MESSAGE_TYPES.NAVIGATE_AND_SCRAPE,
-        data: {
-          tabId: 789,
-          url: 'https://twitter.com/user/status/2',
-          commentLimit: 5,
-        },
-      };
-
-      const result = await handleMessage(message, {}, vi.fn());
-
-      expect(mockTabs.update).toHaveBeenCalledWith(789, { url: 'https://twitter.com/user/status/2' });
-      expect(mockTabs.sendMessage).toHaveBeenCalledWith(789, {
-        type: MESSAGE_TYPES.SCRAPE_PAGE,
-        data: {
-          commentLimit: 5,
-          excludeIds: undefined,
-          expandReplies: true,
-        },
-      });
-      expect(result).toEqual({ success: true, tweets: [] });
-    });
-
-    it('navigates source tab without scraping', async () => {
-      mockTabs.update.mockResolvedValue({ id: 321 });
-
-      const message: Message = {
-        type: MESSAGE_TYPES.NAVIGATE_TAB,
-        data: {
-          tabId: 321,
-          url: 'https://twitter.com/user/status/3',
-        },
-      };
-
-      const result = await handleMessage(message, {}, vi.fn());
-
-      expect(mockTabs.update).toHaveBeenCalledWith(321, { url: 'https://twitter.com/user/status/3' });
-      expect(result).toEqual({ success: true });
-    });
   });
 
   describe('MESSAGE_TYPES', () => {
@@ -312,9 +264,6 @@ describe('Background Script', () => {
       expect(MESSAGE_TYPES.GET_SETTINGS).toBeDefined();
       expect(MESSAGE_TYPES.SAVE_SETTINGS).toBeDefined();
       expect(MESSAGE_TYPES.SCRAPE_MORE).toBeDefined();
-      expect(MESSAGE_TYPES.SCRAPE_CHILD_REPLIES).toBeDefined();
-      expect(MESSAGE_TYPES.NAVIGATE_AND_SCRAPE).toBeDefined();
-      expect(MESSAGE_TYPES.NAVIGATE_TAB).toBeDefined();
     });
   });
 });

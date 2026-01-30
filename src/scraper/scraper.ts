@@ -26,7 +26,8 @@ export interface ScrapeOptions {
 
 export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
   const { commentLimit, excludeIds } = options;
-  const articles = document.querySelectorAll('article[data-testid="tweet"]');
+  const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
+    .filter((article) => !article.parentElement?.closest('article[data-testid="tweet"]'));
   const tweets: Tweet[] = [];
   const rowInfos: Array<{ parent: Element | null; index: number }> = [];
 
@@ -35,10 +36,26 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     return idMatch ? idMatch[1] : '';
   };
 
+  const findPrimaryStatusLink = (article: Element): HTMLAnchorElement | null => {
+    const timeLinks = Array.from(article.querySelectorAll('time'))
+      .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
+      .filter((link): link is HTMLAnchorElement => !!link);
+
+    for (const link of timeLinks) {
+      if (link.closest('article[data-testid="tweet"]') === article) {
+        return link;
+      }
+    }
+
+    const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
+      .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
+      .filter((link) => link.closest('article[data-testid="tweet"]') === article);
+
+    return links[0] ?? null;
+  };
+
   const getStatusLink = (article: Element): HTMLAnchorElement | null => {
-    const timeEl = article.querySelector('time');
-    const timeLink = timeEl?.closest('a[href*="/status/"]') as HTMLAnchorElement | null;
-    return timeLink ?? (article.querySelector('a[href*="/status/"]') as HTMLAnchorElement | null);
+    return findPrimaryStatusLink(article);
   };
 
   const getStatusId = (article: Element): string => {
@@ -70,6 +87,8 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
   const isInlineReply = (article: Element): boolean => {
     const hasShowReplies = (el: Element | null): boolean => {
       if (!el) return false;
+      const hasTestId = !!el.querySelector('[data-testid="showMoreReplies"],[data-testid="showReplies"]');
+      if (hasTestId) return true;
       const text = el.textContent?.toLowerCase() ?? '';
       return text.includes('show replies') || text.includes('show more replies');
     };
@@ -95,6 +114,20 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     return { parent: row.parentElement, index: siblings.indexOf(row) };
   };
 
+  const hashString = (value: string): string => {
+    let hash = 0;
+    for (let i = 0; i < value.length; i += 1) {
+      hash = (hash << 5) - hash + value.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+  };
+
+  const buildFallbackId = (text: string, author: string, timestamp: string, index: number): string => {
+    const base = `${author}|${timestamp}|${text}|${index}`;
+    return `fallback-${hashString(base)}`;
+  };
+
   articles.forEach((article, index) => {
     // Extract text
     const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
@@ -109,7 +142,8 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     const timestamp = timeEl?.getAttribute('datetime') ?? '';
 
     // Extract ID from status link
-    const id = getStatusId(article);
+    const resolvedId = getStatusId(article);
+    const id = resolvedId || buildFallbackId(text, author, timestamp, index);
     const replyCount = getReplyCount(article);
     const url = getStatusUrl(article);
 
@@ -130,14 +164,30 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     rowInfos.push(getRowInfo(article));
   });
 
+  // Exclude inline replies (nested replies) from thread scope
+  let baseTweets = tweets;
+  let baseRowInfos = rowInfos;
+  if (tweets.some((tweet) => tweet.inlineReply)) {
+    const nextTweets: Tweet[] = [];
+    const nextRows: Array<{ parent: Element | null; index: number }> = [];
+    tweets.forEach((tweet, idx) => {
+      if (!tweet.inlineReply) {
+        nextTweets.push(tweet);
+        nextRows.push(rowInfos[idx]);
+      }
+    });
+    baseTweets = nextTweets;
+    baseRowInfos = nextRows;
+  }
+
   // Apply comment limit (first tweet is main post, rest are comments)
-  let limitedTweets = tweets;
-  let limitedRowInfos = rowInfos;
-  if (commentLimit !== undefined && tweets.length > 1) {
-    const mainPost = tweets[0];
-    const comments = tweets.slice(1, 1 + commentLimit);
+  let limitedTweets = baseTweets;
+  let limitedRowInfos = baseRowInfos;
+  if (commentLimit !== undefined && baseTweets.length > 1) {
+    const mainPost = baseTweets[0];
+    const comments = baseTweets.slice(1, 1 + commentLimit);
     limitedTweets = [mainPost, ...comments];
-    limitedRowInfos = [rowInfos[0], ...rowInfos.slice(1, 1 + commentLimit)];
+    limitedRowInfos = [baseRowInfos[0], ...baseRowInfos.slice(1, 1 + commentLimit)];
   }
 
   const excludeSet = excludeIds && excludeIds.length > 0 ? new Set(excludeIds) : undefined;
@@ -179,7 +229,11 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     if (prev.parent !== curr.parent) return false;
     const rows = rowsByParent.get(curr.parent);
     if (!rows) return false;
-    return rows.has(curr.index) && rows.has(prev.index) && curr.index === prev.index + 1;
+    const prevRow = rows.get(prev.index);
+    const currRow = rows.get(curr.index);
+    if (!prevRow || !currRow) return false;
+    if (prevRow.excluded || currRow.excluded) return false;
+    return curr.index === prev.index + 1;
   };
 
   const hasRowNeighbor = (
@@ -189,7 +243,8 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     if (!curr || !curr.parent || curr.index < 0) return false;
     const rows = rowsByParent.get(curr.parent);
     if (!rows) return false;
-    return rows.has(curr.index + direction);
+    const neighbor = rows.get(curr.index + direction);
+    return !!neighbor && !neighbor.excluded;
   };
 
   filteredTweets.forEach((tweet, idx) => {

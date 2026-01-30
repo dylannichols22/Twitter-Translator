@@ -3,7 +3,7 @@
  * Manages the translation panel state and coordinates between the panel UI and translation logic.
  */
 
-import { SidePanel, destroyPanel } from './panel';
+import { SidePanel } from './panel';
 import { injectPanelStyles, removePanelStyles } from './panel.css';
 import { renderTweet as renderTweetCard } from './translate';
 import type { Tweet } from '../scraper';
@@ -16,6 +16,12 @@ export interface CachedTranslation {
   notes: string[];
 }
 
+export type BreakdownToggleCallback = (
+  article: HTMLElement,
+  breakdown: HTMLElement,
+  tweet: Tweet
+) => void;
+
 export class PanelController {
   private panel: SidePanel;
   private tweets: Tweet[] = [];
@@ -23,12 +29,13 @@ export class PanelController {
   private translationCache: Map<string, CachedTranslation> = new Map();
   private usage: UsageStats = { inputTokens: 0, outputTokens: 0 };
   private knownTweetIds: Set<string> = new Set();
-  private loadMoreCallback: (() => void) | null = null;
-  private loadMoreBtn: HTMLButtonElement | null = null;
+  private breakdownToggleCallback: BreakdownToggleCallback | null = null;
+  private tweetIndexById: Map<string, number> = new Map();
 
   constructor() {
     injectPanelStyles();
     this.panel = new SidePanel();
+    this.setLoadMoreEnabled(false);
   }
 
   /**
@@ -65,6 +72,7 @@ export class PanelController {
   setTweets(tweets: Tweet[], url: string): void {
     this.tweets = tweets;
     this.sourceUrl = url;
+    this.tweetIndexById = new Map(tweets.map((tweet, index) => [tweet.id, index]));
   }
 
   /**
@@ -86,6 +94,8 @@ export class PanelController {
    */
   clearTweets(): void {
     this.tweets = [];
+    this.knownTweetIds.clear();
+    this.tweetIndexById.clear();
     const content = this.panel.getContentContainer();
     if (content) {
       content.innerHTML = '';
@@ -206,8 +216,29 @@ export class PanelController {
     const container = this.getContentContainer();
     if (!container) return;
 
-    const element = renderTweetCard(tweet, translation);
-    container.appendChild(element);
+    const onToggleBreakdown = this.breakdownToggleCallback
+      ? (article: HTMLElement, breakdown: HTMLElement) => {
+          this.breakdownToggleCallback!(article, breakdown, tweet);
+        }
+      : undefined;
+
+    const element = renderTweetCard(tweet, translation, onToggleBreakdown);
+    const targetIndex = this.tweetIndexById.get(tweet.id);
+    if (typeof targetIndex !== 'number') {
+      container.appendChild(element);
+    } else {
+      const cards = Array.from(container.querySelectorAll<HTMLElement>('.tweet-card'));
+      const next = cards.find((card) => {
+        const id = card.dataset.tweetId ?? '';
+        const index = this.tweetIndexById.get(id);
+        return typeof index === 'number' && index > targetIndex;
+      });
+      if (next) {
+        container.insertBefore(element, next);
+      } else {
+        container.appendChild(element);
+      }
+    }
     this.knownTweetIds.add(tweet.id);
   }
 
@@ -220,6 +251,7 @@ export class PanelController {
 
     container.innerHTML = '';
     this.knownTweetIds.clear();
+    this.tweetIndexById = new Map(tweets.map((tweet, index) => [tweet.id, index]));
 
     for (const tweet of tweets) {
       const translation = translations.find((t) => t.id === tweet.id);
@@ -230,55 +262,10 @@ export class PanelController {
   }
 
   /**
-   * Returns whether the load more button is currently shown.
+   * Sets the callback for when breakdown is toggled.
    */
-  hasLoadMoreButton(): boolean {
-    return this.loadMoreBtn !== null && this.loadMoreBtn.parentElement !== null;
-  }
-
-  /**
-   * Shows or hides the load more button.
-   */
-  showLoadMoreButton(show: boolean): void {
-    const container = this.getContentContainer();
-    if (!container) return;
-
-    if (show) {
-      if (!this.loadMoreBtn) {
-        this.loadMoreBtn = document.createElement('button');
-        this.loadMoreBtn.className = 'load-more-btn';
-        this.loadMoreBtn.type = 'button';
-        this.loadMoreBtn.textContent = 'Load more replies';
-        this.loadMoreBtn.addEventListener('click', () => {
-          if (this.loadMoreCallback) {
-            this.loadMoreCallback();
-          }
-        });
-      }
-      if (!this.loadMoreBtn.parentElement) {
-        container.appendChild(this.loadMoreBtn);
-      }
-    } else {
-      if (this.loadMoreBtn && this.loadMoreBtn.parentElement) {
-        this.loadMoreBtn.remove();
-      }
-    }
-  }
-
-  /**
-   * Sets the callback for when load more is clicked.
-   */
-  setLoadMoreCallback(callback: () => void): void {
-    this.loadMoreCallback = callback;
-  }
-
-  /**
-   * Enables or disables the load more button.
-   */
-  disableLoadMoreButton(disable: boolean): void {
-    if (this.loadMoreBtn) {
-      this.loadMoreBtn.disabled = disable;
-    }
+  setBreakdownToggleCallback(callback: BreakdownToggleCallback): void {
+    this.breakdownToggleCallback = callback;
   }
 
   /**
@@ -289,6 +276,9 @@ export class PanelController {
     for (const tweet of tweets) {
       if (this.knownTweetIds.has(tweet.id)) {
         continue;
+      }
+      if (!this.tweetIndexById.has(tweet.id)) {
+        this.tweetIndexById.set(tweet.id, this.tweetIndexById.size);
       }
       const translation = translations.find((t) => t.id === tweet.id);
       if (translation) {
@@ -312,7 +302,29 @@ export class PanelController {
     this.tweets = [];
     this.sourceUrl = '';
     this.translationCache.clear();
+    this.knownTweetIds.clear();
+    this.tweetIndexById.clear();
     this.usage = { inputTokens: 0, outputTokens: 0 };
     removePanelStyles();
+  }
+
+  resetState(): void {
+    this.clearTweets();
+    this.clearCache();
+    this.resetUsage();
+    this.sourceUrl = '';
+    this.panel.setFooterContent('');
+  }
+
+  setLoadMoreHandler(handler: (() => void) | null): void {
+    const button = this.panel.getLoadMoreButton();
+    if (!button) return;
+    button.onclick = handler;
+  }
+
+  setLoadMoreEnabled(enabled: boolean): void {
+    const button = this.panel.getLoadMoreButton();
+    if (!button) return;
+    button.disabled = !enabled;
   }
 }

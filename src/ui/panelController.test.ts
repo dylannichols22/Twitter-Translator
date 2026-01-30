@@ -279,64 +279,7 @@ describe('PanelController', () => {
     });
   });
 
-  describe('Load More', () => {
-    it('hasLoadMoreButton returns false initially', () => {
-      const controller = new PanelController();
-      expect(controller.hasLoadMoreButton()).toBe(false);
-    });
-
-    it('showLoadMoreButton adds button to panel', () => {
-      const controller = new PanelController();
-      controller.showLoadMoreButton(true);
-      const panel = document.querySelector('.twitter-translator-panel');
-      expect(panel?.querySelector('.load-more-btn')).not.toBeNull();
-    });
-
-    it('showLoadMoreButton(false) removes button from panel', () => {
-      const controller = new PanelController();
-      controller.showLoadMoreButton(true);
-      controller.showLoadMoreButton(false);
-      const panel = document.querySelector('.twitter-translator-panel');
-      expect(panel?.querySelector('.load-more-btn')).toBeNull();
-    });
-
-    it('load more button has correct text', () => {
-      const controller = new PanelController();
-      controller.showLoadMoreButton(true);
-      const btn = document.querySelector('.twitter-translator-panel .load-more-btn');
-      expect(btn?.textContent).toBe('Load more replies');
-    });
-
-    it('onLoadMore callback is triggered when button clicked', () => {
-      const controller = new PanelController();
-      const callback = vi.fn();
-      controller.setLoadMoreCallback(callback);
-      controller.showLoadMoreButton(true);
-
-      const btn = document.querySelector('.twitter-translator-panel .load-more-btn') as HTMLButtonElement;
-      btn.click();
-
-      expect(callback).toHaveBeenCalled();
-    });
-
-    it('disableLoadMoreButton disables the button', () => {
-      const controller = new PanelController();
-      controller.showLoadMoreButton(true);
-      controller.disableLoadMoreButton(true);
-
-      const btn = document.querySelector('.twitter-translator-panel .load-more-btn') as HTMLButtonElement;
-      expect(btn.disabled).toBe(true);
-    });
-
-    it('disableLoadMoreButton(false) enables the button', () => {
-      const controller = new PanelController();
-      controller.showLoadMoreButton(true);
-      controller.disableLoadMoreButton(true);
-      controller.disableLoadMoreButton(false);
-
-      const btn = document.querySelector('.twitter-translator-panel .load-more-btn') as HTMLButtonElement;
-      expect(btn.disabled).toBe(false);
-    });
+  describe('Tweet Appending', () => {
 
     it('appendTweets adds new tweets without removing existing ones', () => {
       const controller = new PanelController();

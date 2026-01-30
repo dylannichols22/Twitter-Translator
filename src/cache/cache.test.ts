@@ -22,18 +22,18 @@ describe('SessionCache', () => {
   });
 
   describe('get and set', () => {
-    it('stores and retrieves translations by URL', () => {
-      cache.set('https://twitter.com/user/status/123', mockTranslation);
-      const result = cache.get('https://twitter.com/user/status/123');
+    it('stores and retrieves translations by URL', async () => {
+      await cache.set('https://twitter.com/user/status/123', mockTranslation);
+      const result = await cache.get('https://twitter.com/user/status/123');
       expect(result).toEqual(mockTranslation);
     });
 
-    it('returns undefined for non-existent entries', () => {
-      const result = cache.get('https://twitter.com/nonexistent');
+    it('returns undefined for non-existent entries', async () => {
+      const result = await cache.get('https://twitter.com/nonexistent');
       expect(result).toBeUndefined();
     });
 
-    it('overwrites existing entries with same key', () => {
+    it('overwrites existing entries with same key', async () => {
       const updatedTranslation: TranslationResult = {
         ...mockTranslation,
         translations: [
@@ -46,59 +46,59 @@ describe('SessionCache', () => {
         ],
       };
 
-      cache.set('https://twitter.com/user/status/123', mockTranslation);
-      cache.set('https://twitter.com/user/status/123', updatedTranslation);
+      await cache.set('https://twitter.com/user/status/123', mockTranslation);
+      await cache.set('https://twitter.com/user/status/123', updatedTranslation);
 
-      const result = cache.get('https://twitter.com/user/status/123');
+      const result = await cache.get('https://twitter.com/user/status/123');
       expect(result?.translations[0].naturalTranslation).toBe('Updated');
     });
   });
 
   describe('has', () => {
-    it('returns true for cached URLs', () => {
-      cache.set('https://twitter.com/user/status/123', mockTranslation);
-      expect(cache.has('https://twitter.com/user/status/123')).toBe(true);
+    it('returns true for cached URLs', async () => {
+      await cache.set('https://twitter.com/user/status/123', mockTranslation);
+      await expect(cache.has('https://twitter.com/user/status/123')).resolves.toBe(true);
     });
 
-    it('returns false for non-cached URLs', () => {
-      expect(cache.has('https://twitter.com/nonexistent')).toBe(false);
+    it('returns false for non-cached URLs', async () => {
+      await expect(cache.has('https://twitter.com/nonexistent')).resolves.toBe(false);
     });
   });
 
   describe('delete', () => {
-    it('removes cached entry', () => {
-      cache.set('https://twitter.com/user/status/123', mockTranslation);
-      cache.delete('https://twitter.com/user/status/123');
-      expect(cache.has('https://twitter.com/user/status/123')).toBe(false);
+    it('removes cached entry', async () => {
+      await cache.set('https://twitter.com/user/status/123', mockTranslation);
+      await cache.delete('https://twitter.com/user/status/123');
+      await expect(cache.has('https://twitter.com/user/status/123')).resolves.toBe(false);
     });
 
-    it('does nothing for non-existent entries', () => {
-      expect(() => cache.delete('https://twitter.com/nonexistent')).not.toThrow();
+    it('does nothing for non-existent entries', async () => {
+      await expect(cache.delete('https://twitter.com/nonexistent')).resolves.not.toThrow();
     });
   });
 
   describe('clear', () => {
-    it('removes all cached entries', () => {
-      cache.set('https://twitter.com/user/status/123', mockTranslation);
-      cache.set('https://twitter.com/user/status/456', mockTranslation);
+    it('removes all cached entries', async () => {
+      await cache.set('https://twitter.com/user/status/123', mockTranslation);
+      await cache.set('https://twitter.com/user/status/456', mockTranslation);
 
-      cache.clear();
+      await cache.clear();
 
-      expect(cache.has('https://twitter.com/user/status/123')).toBe(false);
-      expect(cache.has('https://twitter.com/user/status/456')).toBe(false);
-      expect(cache.size()).toBe(0);
+      await expect(cache.has('https://twitter.com/user/status/123')).resolves.toBe(false);
+      await expect(cache.has('https://twitter.com/user/status/456')).resolves.toBe(false);
+      await expect(cache.size()).resolves.toBe(0);
     });
   });
 
   describe('size', () => {
-    it('returns number of cached entries', () => {
-      expect(cache.size()).toBe(0);
+    it('returns number of cached entries', async () => {
+      await expect(cache.size()).resolves.toBe(0);
 
-      cache.set('https://twitter.com/user/status/123', mockTranslation);
-      expect(cache.size()).toBe(1);
+      await cache.set('https://twitter.com/user/status/123', mockTranslation);
+      await expect(cache.size()).resolves.toBe(1);
 
-      cache.set('https://twitter.com/user/status/456', mockTranslation);
-      expect(cache.size()).toBe(2);
+      await cache.set('https://twitter.com/user/status/456', mockTranslation);
+      await expect(cache.size()).resolves.toBe(2);
     });
   });
 
@@ -122,6 +122,17 @@ describe('SessionCache', () => {
     it('handles different paths differently', () => {
       const key1 = SessionCache.generateCacheKey('https://twitter.com/user/status/123');
       const key2 = SessionCache.generateCacheKey('https://twitter.com/user/status/456');
+
+      expect(key1).not.toBe(key2);
+    });
+
+    it('includes comment limit in cache key', () => {
+      const key1 = SessionCache.generateCacheKey('https://twitter.com/user/status/123', {
+        commentLimit: 10,
+      });
+      const key2 = SessionCache.generateCacheKey('https://twitter.com/user/status/123', {
+        commentLimit: 50,
+      });
 
       expect(key1).not.toBe(key2);
     });

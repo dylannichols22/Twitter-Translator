@@ -25,10 +25,10 @@ export class StorageManager {
   }
 
   async saveSettings(settings: Settings): Promise<void> {
-    if (typeof settings.commentLimit !== 'number') {
+    if (typeof settings.commentLimit !== 'number' || Number.isNaN(settings.commentLimit)) {
       throw new Error('Comment limit must be a number');
     }
-    if (settings.commentLimit <= 0) {
+    if (!Number.isFinite(settings.commentLimit) || settings.commentLimit <= 0) {
       throw new Error('Comment limit must be positive');
     }
 

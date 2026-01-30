@@ -1,6 +1,7 @@
 import { StorageManager } from './storage';
 import { CostTracker, calculateCost } from './cost';
 import { translationCache } from './cache';
+import { isTwitterUrl, normalizeTwitterHostname } from './utils/twitter';
 import { MESSAGE_TYPES, Message } from './messages';
 
 export const CONTEXT_MENU_ID = 'translate-chinese-content';
@@ -16,6 +17,24 @@ async function initCostTracker(): Promise<void> {
   const data = await storage.getCostData();
   costTracker = CostTracker.deserialize(data);
 }
+
+const waitForTabComplete = async (tabId: number, timeoutMs = 10000): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      browser.tabs.onUpdated.removeListener(listener);
+      reject(new Error('Timed out waiting for tab to complete'));
+    }, timeoutMs);
+
+    const listener = (updatedTabId: number, info: { status?: string }) => {
+      if (updatedTabId === tabId && info.status === 'complete') {
+        clearTimeout(timeoutId);
+        browser.tabs.onUpdated.removeListener(listener);
+        resolve();
+      }
+    };
+    browser.tabs.onUpdated.addListener(listener);
+  });
+};
 
 export function createContextMenu(): void {
   browser.contextMenus.create({
@@ -39,39 +58,41 @@ export async function handleContextMenuClick(
   }
 
   try {
-    // Send message to content script to scrape the page
-    const response = await browser.tabs.sendMessage(tab.id, {
-      type: MESSAGE_TYPES.SCRAPE_PAGE,
+    const context = await browser.tabs.sendMessage(tab.id, {
+      type: MESSAGE_TYPES.GET_CONTEXT_TWEET_URL,
     });
 
-    if (response?.success && response.tweets) {
-      // Open translation page with data
-      const params = new URLSearchParams({
-        data: JSON.stringify({
-          tweets: response.tweets,
-          url: tab.url || response.url,
-          sourceTabId: tab.id,
-        }),
-      });
+    const targetUrl =
+      typeof (context as { url?: string })?.url === 'string'
+        ? (context as { url: string }).url
+        : tab.url || '';
 
-      await browser.tabs.create({
-        url: browser.runtime.getURL(`translate.html?${params.toString()}`),
-      });
+    if (targetUrl && targetUrl !== tab.url) {
+      await browser.tabs.update(tab.id, { url: targetUrl });
+      await waitForTabComplete(tab.id);
     }
+
+    await browser.tabs.sendMessage(tab.id, {
+      type: MESSAGE_TYPES.TOGGLE_PANEL,
+    });
   } catch (error) {
-    console.error('Failed to scrape page:', error);
+    console.error('Failed to toggle panel:', error);
   }
 }
 
 export async function handleMessage(
-  message: Message,
+  message: unknown,
   _sender: unknown,
   _sendResponse: (response?: unknown) => void
 ): Promise<unknown> {
+  if (!message || typeof message !== 'object' || !('type' in message)) {
+    return undefined;
+  }
+  const typedMessage = message as Message;
   const normalizeThreadUrl = (url: string): string => {
     try {
       const parsed = new URL(url);
-      const normalizedHost = parsed.hostname.replace('x.com', 'twitter.com');
+      const normalizedHost = normalizeTwitterHostname(parsed.hostname);
       return `${normalizedHost}${parsed.pathname}`;
     } catch {
       return url;
@@ -84,40 +105,15 @@ export async function handleMessage(
     return tabs.find((tab) => tab.url && normalizeThreadUrl(tab.url) === target);
   };
 
-  const waitForTabComplete = async (tabId: number): Promise<void> => {
-    await new Promise<void>((resolve) => {
-      const listener = (updatedTabId: number, info: { status?: string }) => {
-        if (updatedTabId === tabId && info.status === 'complete') {
-          browser.tabs.onUpdated.removeListener(listener);
-          resolve();
-        }
-      };
-      browser.tabs.onUpdated.addListener(listener);
-    });
-  };
-
-  const scrapeInNewTab = async (url: string, data: { commentLimit?: number; excludeIds?: string[]; expandReplies?: boolean }) => {
-    const tab = await browser.tabs.create({ url, active: false });
-    if (!tab.id) {
-      return { success: false, error: 'Failed to open thread tab' };
-    }
-
-    try {
-      await waitForTabComplete(tab.id);
-      return await browser.tabs.sendMessage(tab.id, {
-        type: MESSAGE_TYPES.SCRAPE_PAGE,
-        data,
-      });
-    } finally {
-      await browser.tabs.remove(tab.id);
-    }
-  };
-
-  switch (message.type) {
+  switch (typedMessage.type) {
     case MESSAGE_TYPES.OPEN_TRANSLATE_PAGE: {
-      const data = message.data as { tweets: unknown[]; url: string; sourceTabId?: number };
+      const data = typedMessage.data as { tweets: unknown[]; url: string; sourceTabId?: number };
+      const payloadKey = `tt-payload-${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+      const payloadStorage = browser.storage.session ?? browser.storage.local;
+      await payloadStorage.set({ [payloadKey]: data });
+
       const params = new URLSearchParams({
-        data: JSON.stringify(data),
+        payloadKey,
       });
 
       await browser.tabs.create({
@@ -131,7 +127,7 @@ export async function handleMessage(
     }
 
     case MESSAGE_TYPES.SAVE_SETTINGS: {
-      const settings = message.data as { apiKey: string; commentLimit: number };
+      const settings = typedMessage.data as { apiKey: string; commentLimit: number };
       await storage.saveSettings(settings);
       return { success: true };
     }
@@ -148,7 +144,7 @@ export async function handleMessage(
     }
 
     case MESSAGE_TYPES.RECORD_USAGE: {
-      const usage = message.data as {
+      const usage = typedMessage.data as {
         inputTokens: number;
         outputTokens: number;
       };
@@ -162,36 +158,28 @@ export async function handleMessage(
     }
 
     case MESSAGE_TYPES.GET_CACHED_TRANSLATION: {
-      const url = message.data as string;
-      const cached = translationCache.get(url);
+      const data = typedMessage.data as { url: string; commentLimit?: number };
+      const cached = await translationCache.get(data.url, { commentLimit: data.commentLimit });
       return cached || null;
     }
 
     case MESSAGE_TYPES.CACHE_TRANSLATION: {
-      const cacheData = message.data as { url: string; translation: unknown };
-      translationCache.set(cacheData.url, cacheData.translation as never);
+      const cacheData = typedMessage.data as { url: string; commentLimit?: number; translation: unknown };
+      await translationCache.set(cacheData.url, cacheData.translation as never, {
+        commentLimit: cacheData.commentLimit,
+      });
       return { success: true };
     }
 
-    case MESSAGE_TYPES.SCRAPE_MORE:
-    case MESSAGE_TYPES.SCRAPE_CHILD_REPLIES: {
-      const data = message.data as {
+    case MESSAGE_TYPES.SCRAPE_MORE: {
+      const data = typedMessage.data as {
         url: string;
-        threadUrl?: string;
         commentLimit?: number;
         excludeIds?: string[];
         scrollToLoadMore?: boolean;
         scrollMaxRounds?: number;
         scrollIdleRounds?: number;
       };
-
-      if (message.type === MESSAGE_TYPES.SCRAPE_CHILD_REPLIES && data.threadUrl) {
-        return await scrapeInNewTab(data.threadUrl, {
-          commentLimit: data.commentLimit,
-          excludeIds: data.excludeIds,
-          expandReplies: true,
-        });
-      }
 
       const tab = await findThreadTab(data.url);
       if (!tab?.id) {
@@ -210,40 +198,6 @@ export async function handleMessage(
       });
     }
 
-    case MESSAGE_TYPES.NAVIGATE_TAB: {
-      const data = message.data as { tabId?: number; url: string };
-      if (!data.tabId) {
-        return { success: false, error: 'Source tab not found' };
-      }
-      await browser.tabs.update(data.tabId, { url: data.url });
-      return { success: true };
-    }
-
-    case MESSAGE_TYPES.NAVIGATE_AND_SCRAPE: {
-      const data = message.data as {
-        tabId?: number;
-        url: string;
-        commentLimit?: number;
-        excludeIds?: string[];
-      };
-
-      if (!data.tabId) {
-        return { success: false, error: 'Source tab not found' };
-      }
-
-      await browser.tabs.update(data.tabId, { url: data.url });
-      await waitForTabComplete(data.tabId);
-
-      return await browser.tabs.sendMessage(data.tabId, {
-        type: MESSAGE_TYPES.SCRAPE_PAGE,
-        data: {
-          commentLimit: data.commentLimit,
-          excludeIds: data.excludeIds,
-          expandReplies: true,
-        },
-      });
-    }
-
     case MESSAGE_TYPES.SMOKE_PING: {
       // Log for smoke test - web-ext captures console output
       console.log('SMOKE_OK');
@@ -252,6 +206,35 @@ export async function handleMessage(
 
     default:
       return undefined;
+  }
+}
+
+// Check if URL is a Twitter/X page
+
+// Update browser action popup based on current tab
+async function updateBrowserActionForTab(tabId: number, url: string): Promise<void> {
+  // Always show popup; on Twitter it includes a Toggle Panel action.
+  await browser.browserAction.setPopup({ tabId, popup: 'popup.html' });
+}
+
+// Handle browser action click to toggle panel
+export async function handleBrowserActionClick(tab: { id?: number; url?: string }): Promise<void> {
+  if (!tab?.id) {
+    return;
+  }
+
+  // Only toggle panel on Twitter/X pages (non-Twitter pages show popup instead)
+  const url = tab.url || '';
+  if (!isTwitterUrl(url)) {
+    return;
+  }
+
+  try {
+    await browser.tabs.sendMessage(tab.id, {
+      type: MESSAGE_TYPES.TOGGLE_PANEL,
+    });
+  } catch (error) {
+    console.error('Failed to toggle panel:', error);
   }
 }
 
@@ -265,6 +248,27 @@ export function initializeExtension(): void {
   browser.contextMenus.onClicked.addListener(handleContextMenuClick);
   browser.runtime.onMessage.addListener(handleMessage);
 
+  // Browser action click toggles panel on Twitter pages
+  browser.browserAction.onClicked.addListener(handleBrowserActionClick);
+
+  // Update browser action popup based on active tab
+  browser.tabs.onActivated.addListener(async (activeInfo) => {
+    try {
+      const tab = await browser.tabs.get(activeInfo.tabId);
+      if (tab.url) {
+        await updateBrowserActionForTab(activeInfo.tabId, tab.url);
+      }
+    } catch {
+      // Tab might not exist or have permission
+    }
+  });
+
+  // Update browser action when tab URL changes
+  browser.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+    if (changeInfo.url && tab.active) {
+      await updateBrowserActionForTab(tabId, changeInfo.url);
+    }
+  });
 }
 
 // Auto-initialize when loaded in browser context (not tests)
