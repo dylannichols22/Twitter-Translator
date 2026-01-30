@@ -64,16 +64,40 @@ export function renderNotes(notes: string[]): HTMLDivElement {
   return container;
 }
 
+const SENTENCE_END = /[。！？!?…]+$/;
+
+export function groupSegmentsForTables(segments: Segment[], maxSegments = 8): Segment[][] {
+  const groups: Segment[][] = [];
+  let current: Segment[] = [];
+
+  const flush = () => {
+    if (current.length > 0) {
+      groups.push(current);
+      current = [];
+    }
+  };
+
+  for (const segment of segments) {
+    current.push(segment);
+
+    const endsSentence = SENTENCE_END.test(segment.chinese.trim()) || segment.chinese.includes('\n');
+    if (endsSentence || current.length >= maxSegments) {
+      flush();
+    }
+  }
+
+  flush();
+  return groups;
+}
+
 function renderBreakdownContent(breakdown: Breakdown): DocumentFragment {
   const fragment = document.createDocumentFragment();
+  const groups = groupSegmentsForTables(breakdown.segments, 8);
 
-  // Split segments into chunks of max 8 for readability
-  const chunkSize = 8;
-  for (let i = 0; i < breakdown.segments.length; i += chunkSize) {
-    const chunk = breakdown.segments.slice(i, i + chunkSize);
+  for (const group of groups) {
     const wrapper = document.createElement('div');
     wrapper.className = 'segment-table-wrapper';
-    wrapper.appendChild(renderSegmentTable(chunk));
+    wrapper.appendChild(renderSegmentTable(group));
     fragment.appendChild(wrapper);
   }
 

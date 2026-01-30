@@ -10,6 +10,7 @@ import {
   renderSegmentTable,
   renderNotes,
   TranslateViewController,
+  groupSegmentsForTables,
 } from './translate';
 import { renderSkeletonContainer } from './skeleton';
 import type { TranslatedTweet, Segment } from '../translator';
@@ -99,6 +100,36 @@ describe('Translation View', () => {
     it('handles empty notes array', () => {
       const container = renderNotes([]);
       expect(container.querySelector('p')?.textContent).toContain('No notes');
+    });
+  });
+
+  describe('groupSegmentsForTables', () => {
+    it('starts a new table on sentence-ending punctuation', () => {
+      const segments: Segment[] = [
+        { chinese: '今天', pinyin: 'jīntiān', gloss: 'today' },
+        { chinese: '很棒。', pinyin: 'hěn bàng', gloss: 'great.' },
+        { chinese: '真的', pinyin: 'zhēnde', gloss: 'really' },
+        { chinese: '不错！', pinyin: 'búcuò', gloss: 'nice!' },
+      ];
+
+      const groups = groupSegmentsForTables(segments, 8);
+      expect(groups).toHaveLength(2);
+      expect(groups[0]).toHaveLength(2);
+      expect(groups[1]).toHaveLength(2);
+    });
+
+    it('splits long sentences by max segment count', () => {
+      const segments: Segment[] = Array.from({ length: 10 }, (_, i) => ({
+        chinese: `词${i + 1}`,
+        pinyin: `c${i + 1}`,
+        gloss: `w${i + 1}`,
+      }));
+
+      const groups = groupSegmentsForTables(segments, 4);
+      expect(groups).toHaveLength(3);
+      expect(groups[0]).toHaveLength(4);
+      expect(groups[1]).toHaveLength(4);
+      expect(groups[2]).toHaveLength(2);
     });
   });
 

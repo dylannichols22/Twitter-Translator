@@ -239,7 +239,8 @@ For the provided Chinese text, you must return:
 2. Pinyin with tone marks (e.g., jīntiān, not jintion1)
 3. Word-by-word gloss/meaning
 4. Notes about cultural context, internet slang, idioms, or learning tips
-5. If the text includes profanity, insults, or slurs, explain them neutrally for learning (do not endorse or intensify). Do not mask or censor the words; keep them in the gloss so the learner can map meaning accurately.
+5. Segment by sentence boundaries where possible. Include sentence-ending punctuation (e.g., 。！？) with the final segment of the sentence.
+6. If the text includes profanity, insults, or slurs, explain them neutrally for learning. Do not add moral judgments, safety warnings, or lecturing; keep notes focused on meaning, register, and usage. Do not mask or censor the words; keep them in the gloss so the learner can map meaning accurately.
 
 IMPORTANT: Return ONLY valid JSON matching this exact structure:
 {
