@@ -156,7 +156,10 @@ describe('Translator', () => {
         usage: { input_tokens: 10, output_tokens: 20 },
       });
 
-      const result = await getBreakdown('test', 'test-api-key');
+      const result = await getBreakdown('test', 'test-api-key', {
+        opAuthor: 'OP',
+        opText: 'Original post',
+      });
 
       expect(result.breakdown.segments).toHaveLength(2);
       expect(result.breakdown.segments[0].chinese).toBe('本來');

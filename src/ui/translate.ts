@@ -395,7 +395,12 @@ export class TranslateViewController {
         article.classList.add('expanded');
 
         try {
-          const result = await getBreakdown(tweet.text, this.apiKey);
+          const opTweet = this.tweets[0];
+          const result = await getBreakdown(tweet.text, this.apiKey, {
+            opAuthor: opTweet?.author,
+            opText: opTweet?.text,
+            opUrl: opTweet?.url,
+          });
 
           // Update usage stats
           this.totalUsage.inputTokens += result.usage.inputTokens;
@@ -788,8 +793,8 @@ export class TranslateViewController {
       }
       this.setThreadData(responseTweets, response.url || parentTweet.url);
       this.showLoadMore(true);
-      await this.translate();
       this.showOverlayLoading(false);
+      await this.translate();
       this.isLoadingMore = false;
       return;
     }

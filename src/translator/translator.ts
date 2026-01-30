@@ -239,6 +239,7 @@ For the provided Chinese text, you must return:
 2. Pinyin with tone marks (e.g., jīntiān, not jintion1)
 3. Word-by-word gloss/meaning
 4. Notes about cultural context, internet slang, idioms, or learning tips
+5. If the text includes profanity, insults, or slurs, explain them neutrally for learning (do not endorse or intensify). Do not mask or censor the words; keep them in the gloss so the learner can map meaning accurately.
 
 IMPORTANT: Return ONLY valid JSON matching this exact structure:
 {
@@ -367,14 +368,29 @@ export async function translateQuickStreaming(
 }
 
 // Get detailed breakdown for a single tweet (on demand)
-export async function getBreakdown(text: string, apiKey: string): Promise<BreakdownResult> {
+export interface BreakdownContext {
+  opAuthor?: string;
+  opText?: string;
+  opUrl?: string;
+}
+
+export async function getBreakdown(
+  text: string,
+  apiKey: string,
+  context?: BreakdownContext
+): Promise<BreakdownResult> {
   if (!apiKey) {
     throw new Error('API key is required');
   }
 
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
 
-  const userPrompt = `Analyze this Chinese text:\n\n${text}`;
+  const contextLines: string[] = [];
+  if (context?.opAuthor) contextLines.push(`OP author: ${context.opAuthor}`);
+  if (context?.opText) contextLines.push(`OP text: ${context.opText}`);
+  if (context?.opUrl) contextLines.push(`OP url: ${context.opUrl}`);
+  const contextBlock = contextLines.length > 0 ? `\n\nThread context:\n${contextLines.join('\n')}` : '';
+  const userPrompt = `Analyze this Chinese text:\n\n${text}${contextBlock}`;
 
   const response = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
