@@ -146,7 +146,7 @@ describe('Content Script', () => {
 
       expect(response).toBeDefined();
       expect(response!.success).toBe(false);
-      expect(response!.error).toContain('Twitter');
+      expect(response!.error).toContain('supported platform');
     });
 
     it('ignores unknown message types', async () => {

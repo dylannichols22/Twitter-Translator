@@ -1,38 +1,26 @@
 /**
- * URL Watcher for Twitter SPA Navigation
+ * URL Watcher for SPA Navigation
  * Detects URL changes and triggers callbacks for re-translation.
+ * Works with multiple platforms (Twitter, Weibo, etc.)
  */
 
-const TWITTER_HOSTS = ['twitter.com', 'x.com'];
-const STATUS_PATH_REGEX = /^\/[^/]+\/status\/(\d+)/;
+import { isThreadUrl as platformIsThreadUrl, extractPostId } from '../platforms';
 
 /**
- * Checks if a URL is a Twitter/X thread URL.
+ * Checks if a URL is a thread URL on any supported platform.
+ * @deprecated Use isThreadUrl from '../platforms' instead
  */
 export function isTwitterThreadUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    const isTwitterHost = TWITTER_HOSTS.some((host) => parsed.hostname.endsWith(host));
-    if (!isTwitterHost) return false;
-
-    return STATUS_PATH_REGEX.test(parsed.pathname);
-  } catch {
-    return false;
-  }
+  return platformIsThreadUrl(url);
 }
 
 /**
- * Extracts the thread ID from a Twitter URL.
+ * Extracts the thread/post ID from a URL on any supported platform.
  * Returns null if the URL is not a thread URL.
+ * @deprecated Use extractPostId from '../platforms' instead
  */
 export function extractThreadId(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    const match = parsed.pathname.match(STATUS_PATH_REGEX);
-    return match ? match[1] : null;
-  } catch {
-    return null;
-  }
+  return extractPostId(url);
 }
 
 /**
@@ -192,17 +180,17 @@ export class UrlWatcher {
   }
 
   /**
-   * Returns whether the current URL is a thread URL.
+   * Returns whether the current URL is a thread URL on any supported platform.
    */
   isThreadUrl(): boolean {
-    return isTwitterThreadUrl(this.getCurrentUrl());
+    return platformIsThreadUrl(this.getCurrentUrl());
   }
 
   /**
-   * Returns the current thread ID, or null if not on a thread page.
+   * Returns the current thread/post ID, or null if not on a thread page.
    */
   getThreadId(): string | null {
-    return extractThreadId(this.getCurrentUrl());
+    return extractPostId(this.getCurrentUrl());
   }
 
   /**

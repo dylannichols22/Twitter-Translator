@@ -88,7 +88,14 @@ describe('Background Script', () => {
         id: CONTEXT_MENU_ID,
         title: 'Translate Chinese Content',
         contexts: ['page'],
-        documentUrlPatterns: ['*://twitter.com/*', '*://x.com/*'],
+        documentUrlPatterns: [
+          '*://twitter.com/*',
+          '*://x.com/*',
+          '*://weibo.com/*',
+          '*://*.weibo.com/*',
+          '*://weibo.cn/*',
+          '*://*.weibo.cn/*',
+        ],
       });
     });
   });

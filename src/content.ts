@@ -1,7 +1,7 @@
-import { scrapeTweets, Tweet, ScrapeOptions, TWEET_SELECTOR } from './scraper';
+import { scrapeTweets, Tweet, ScrapeOptions, getPostSelector } from './scraper';
 import { MESSAGE_TYPES, Message } from './messages';
 import { PanelIntegration } from './ui/panelIntegration';
-import { isTwitterUrl } from './utils/twitter';
+import { getCurrentPlatform, isSupportedPlatformUrl, twitterPlatform } from './platforms';
 
 interface ScrapeResponse {
   success: boolean;
@@ -11,24 +11,6 @@ interface ScrapeResponse {
 }
 
 let lastContextTweetUrl: string | null = null;
-
-const findPrimaryStatusLink = (article: Element): HTMLAnchorElement | null => {
-  const timeLinks = Array.from(article.querySelectorAll('time'))
-    .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
-    .filter((link): link is HTMLAnchorElement => !!link);
-
-  for (const link of timeLinks) {
-    if (link.closest('[data-testid="tweet"]') === article) {
-      return link;
-    }
-  }
-
-  const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
-    .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
-    .filter((link) => link.closest('[data-testid="tweet"]') === article);
-
-  return links[0] ?? null;
-};
 
 export async function handleMessage(message: Message): Promise<ScrapeResponse | undefined> {
   if (message.type === MESSAGE_TYPES.GET_CONTEXT_TWEET_URL) {
@@ -44,10 +26,12 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
 
   const currentUrl = window.location.href;
 
-  if (!isTwitterUrl(currentUrl)) {
+  const platform = getCurrentPlatform() ?? twitterPlatform;
+
+  if (!isSupportedPlatformUrl(currentUrl)) {
     return {
       success: false,
-      error: 'This page is not a Twitter/X page',
+      error: 'This page is not a supported platform',
     };
   }
 
@@ -56,8 +40,10 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
 
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const getTweetCount = () => document.querySelectorAll(TWEET_SELECTOR).length;
-    const getCellCount = () => document.querySelectorAll('[data-testid="cellInnerDiv"]').length;
+    const postSelector = platform.selectors.postContainer;
+    const cellSelector = platform.selectors.cellContainer;
+    const getTweetCount = () => document.querySelectorAll(postSelector).length;
+    const getCellCount = () => document.querySelectorAll(cellSelector).length;
 
     const waitForCondition = async (
       predicate: () => boolean,
@@ -120,16 +106,18 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
     await waitForCondition(() => getTweetCount() > 0);
 
     if (options.expandReplies) {
+      const showRepliesSelector = platform.selectors.showRepliesButton;
       const clickShowReplies = (): number => {
-        const buttons = Array.from(document.querySelectorAll('button,[role="button"]'));
-        const showReplies = buttons.filter((button) => {
-          const testId = button.getAttribute('data-testid') ?? '';
-          if (testId === 'showMoreReplies' || testId === 'showReplies') {
-            return true;
-          }
-          const text = button.textContent?.toLowerCase() ?? '';
-          return text.includes('show replies') || text.includes('show more replies');
-        });
+        // First try platform-specific selectors
+        const platformButtons = Array.from(document.querySelectorAll(showRepliesSelector));
+        // Also check generic buttons with show replies text
+        const genericButtons = Array.from(document.querySelectorAll('button,[role="button"]'))
+          .filter((button) => {
+            const text = button.textContent?.toLowerCase() ?? '';
+            return text.includes('show replies') || text.includes('show more replies') ||
+                   text.includes('展开') || text.includes('更多');
+          });
+        const showReplies = [...new Set([...platformButtons, ...genericButtons])];
         showReplies.forEach((button) => {
           if (button instanceof HTMLElement) {
             button.click();
@@ -233,8 +221,10 @@ export class ContentScriptHandler {
         lastContextTweetUrl = null;
         return;
       }
-      let article = target.closest('[data-testid="tweet"]');
-      const parentArticle = article?.parentElement?.closest('[data-testid="tweet"]') ?? null;
+      const platform = getCurrentPlatform() ?? twitterPlatform;
+      const postSelector = platform.selectors.postContainer;
+      let article = target.closest(postSelector);
+      const parentArticle = article?.parentElement?.closest(postSelector) ?? null;
       if (parentArticle) {
         article = parentArticle;
       }
@@ -242,25 +232,22 @@ export class ContentScriptHandler {
         lastContextTweetUrl = null;
         return;
       }
-      const link = findPrimaryStatusLink(article);
-      const href = link?.getAttribute('href') ?? '';
-      if (!href) {
+      const url = platform.getPostUrl(article);
+      if (!url) {
         lastContextTweetUrl = null;
         return;
       }
-      lastContextTweetUrl = href.startsWith('http')
-        ? href
-        : `${window.location.origin}${href}`;
+      lastContextTweetUrl = url;
     });
   }
 
   async scrapePage(): Promise<ScrapeResponse> {
     const currentUrl = window.location.href;
 
-    if (!isTwitterUrl(currentUrl)) {
+    if (!isSupportedPlatformUrl(currentUrl)) {
       return {
         success: false,
-        error: 'This page is not a Twitter/X page',
+        error: 'This page is not a supported platform',
       };
     }
 

@@ -9,12 +9,13 @@
  */
 
 import { PanelController, CachedTranslation } from './panelController';
-import { UrlWatcher, isTwitterThreadUrl, extractThreadId } from './urlWatcher';
+import { UrlWatcher } from './urlWatcher';
 import { MESSAGE_TYPES } from '../messages';
-import { scrapeTweets, Tweet, TWEET_SELECTOR } from '../scraper';
+import { scrapeTweets, Tweet } from '../scraper';
 import { translateQuickStreaming, getBreakdown, Breakdown } from '../translator';
 import { renderBreakdownContent } from './breakdown';
 import { clearElement, setText } from './dom';
+import { getCurrentPlatform, isThreadUrl, extractPostId, twitterPlatform, Platform } from '../platforms';
 
 export class PanelIntegration {
   private controller: PanelController;
@@ -23,6 +24,7 @@ export class PanelIntegration {
   private tweets: Tweet[] = [];
   private breakdownCache: Map<string, Breakdown> = new Map();
   private commentLimit: number | undefined;
+  private platform: Platform;
 
   // Navigation token for rejecting stale work
   private navToken = 0;
@@ -47,6 +49,7 @@ export class PanelIntegration {
   private translationsInFlight: Set<string> = new Set();
 
   constructor() {
+    this.platform = getCurrentPlatform() ?? twitterPlatform;
     this.controller = new PanelController();
     this.urlWatcher = new UrlWatcher((newUrl) => {
       this.handleUrlChange(newUrl);
@@ -219,23 +222,25 @@ export class PanelIntegration {
     const pollMs = 150;
 
     const getMainColumn = (): Element | null => {
-      return document.querySelector('main[role="main"]')
+      const mainSelector = this.platform.selectors.mainColumn;
+      return document.querySelector(mainSelector)
         || document.querySelector('[role="main"]')
         || document.querySelector('main');
     };
 
+    const postSelector = this.platform.selectors.postContainer;
     const getPrimaryTweetId = (): string | null => {
       const main = getMainColumn();
       if (!main) return null;
 
       // Get first article in main column (not nested)
-      const articles = main.querySelectorAll(TWEET_SELECTOR);
+      const articles = main.querySelectorAll(postSelector);
       for (const article of articles) {
-        // Skip nested tweets (quotes)
-        if (article.parentElement?.closest('[data-testid="tweet"]')) {
+        // Skip nested posts (quotes)
+        if (article.parentElement?.closest(postSelector)) {
           continue;
         }
-        const id = this.getStatusIdFromElement(article);
+        const id = this.platform.extractPostIdFromElement(article);
         if (id) return id;
       }
       return null;
@@ -254,7 +259,7 @@ export class PanelIntegration {
       }
 
       // Check if URL still matches
-      const currentThreadId = extractThreadId(window.location.href);
+      const currentThreadId = extractPostId(window.location.href);
       if (currentThreadId !== targetThreadId) {
         console.debug('[Panel] gateThreadReady: URL changed', { targetThreadId, currentThreadId });
         return false;
@@ -293,7 +298,8 @@ export class PanelIntegration {
 
     this.stopSyncLoop();
 
-    const main = document.querySelector('main[role="main"]')
+    const mainSelector = this.platform.selectors.mainColumn;
+    const main = document.querySelector(mainSelector)
       || document.querySelector('[role="main"]')
       || document.querySelector('main');
 
@@ -421,7 +427,8 @@ export class PanelIntegration {
    * Gets the set of tweet IDs visible in the main column (not nested/quotes).
    */
   private getMainColumnTweetIds(): Set<string> {
-    const main = document.querySelector('main[role="main"]')
+    const mainSelector = this.platform.selectors.mainColumn;
+    const main = document.querySelector(mainSelector)
       || document.querySelector('[role="main"]')
       || document.querySelector('main');
 
@@ -430,53 +437,22 @@ export class PanelIntegration {
     }
 
     const ids = new Set<string>();
-    const articles = main.querySelectorAll(TWEET_SELECTOR);
+    const postSelector = this.platform.selectors.postContainer;
+    const articles = main.querySelectorAll(postSelector);
 
     for (const article of articles) {
-      // Skip nested tweets (quotes)
-      if (article.parentElement?.closest('[data-testid="tweet"]')) {
+      // Skip nested posts (quotes)
+      if (article.parentElement?.closest(postSelector)) {
         continue;
       }
 
-      const id = this.getStatusIdFromElement(article);
+      const id = this.platform.extractPostIdFromElement(article);
       if (id) {
         ids.add(id);
       }
     }
 
     return ids;
-  }
-
-  /**
-   * Extracts tweet ID from a tweet element (desktop or mobile).
-   */
-  private getStatusIdFromElement(article: Element): string | null {
-    const attrCandidates = ['data-tweet-id', 'data-item-id', 'data-id', 'id'];
-    for (const attr of attrCandidates) {
-      const value = article.getAttribute(attr);
-      if (!value) continue;
-      const match = value.match(/(\d{5,})/);
-      if (match) return match[1];
-    }
-
-    const timeLinks = Array.from(article.querySelectorAll('time'))
-      .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
-      .filter((link): link is HTMLAnchorElement => !!link);
-
-    for (const link of timeLinks) {
-      if (link.closest('[data-testid="tweet"]') === article) {
-        const match = (link.getAttribute('href') ?? '').match(/\/status\/(\d+)/);
-        if (match) return match[1];
-      }
-    }
-
-    const statusLink = article.querySelector('a[href*="/status/"]');
-    if (statusLink) {
-      const match = (statusLink.getAttribute('href') ?? '').match(/\/status\/(\d+)/);
-      if (match) return match[1];
-    }
-
-    return null;
   }
 
   /**
@@ -520,7 +496,7 @@ export class PanelIntegration {
 
     // REQ: sourceThreadId must match current URL thread ID
     if (this.activeThreadId) {
-      const currentThreadId = extractThreadId(window.location.href);
+      const currentThreadId = extractPostId(window.location.href);
       if (currentThreadId !== this.activeThreadId) return false;
       // Note: We do NOT check primaryDomId here because when viewing a child tweet,
       // Twitter shows parent tweets above it for context. The URL points to the child,
@@ -644,23 +620,26 @@ export class PanelIntegration {
       return;
     }
 
+    // Update platform based on new URL
+    this.platform = getCurrentPlatform() ?? twitterPlatform;
+
     console.debug('[Panel] URL changed', {
       newUrl,
-      threadId: extractThreadId(newUrl),
+      threadId: extractPostId(newUrl),
     });
 
     // Start navigation flow
     this.beginNavigation();
     const token = this.navToken;
 
-    if (!isTwitterThreadUrl(newUrl)) {
+    if (!isThreadUrl(newUrl)) {
       this.controller.showLoading(false);
       this.controller.showEmptyState();
       this.controller.setLoadMoreEnabled(false);
       return;
     }
 
-    const targetThreadId = extractThreadId(newUrl);
+    const targetThreadId = extractPostId(newUrl);
     this.activeSourceUrl = newUrl;
     this.activeThreadId = targetThreadId;
 
@@ -723,11 +702,12 @@ export class PanelIntegration {
   toggle(): void {
     const wasOpen = this.controller.isOpen();
     this.controller.toggle();
-    const isOpen = this.controller.isOpen();
+    const isPanelOpen = this.controller.isOpen();
 
-    if (isOpen) {
+    if (isPanelOpen) {
+      this.platform = getCurrentPlatform() ?? twitterPlatform;
       this.urlWatcher.start();
-      if (isTwitterThreadUrl(window.location.href)) {
+      if (isThreadUrl(window.location.href)) {
         this.handleUrlChange(window.location.href);
       } else {
         this.controller.showEmptyState();
@@ -800,7 +780,7 @@ export class PanelIntegration {
       return;
     }
 
-    if (!isTwitterThreadUrl(window.location.href)) {
+    if (!isThreadUrl(window.location.href)) {
       this.controller.showEmptyState();
       return;
     }

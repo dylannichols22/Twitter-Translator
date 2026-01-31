@@ -1,7 +1,7 @@
 import { StorageManager } from './storage';
 import { CostTracker, calculateCost } from './cost';
 import { translationCache } from './cache';
-import { isTwitterUrl, normalizeTwitterHostname } from './utils/twitter';
+import { isSupportedPlatformUrl, normalizeUrl } from './platforms';
 import { MESSAGE_TYPES, Message } from './messages';
 import { savedItemsManager } from './saved';
 import type { SavedItem, SavedItemType } from './saved';
@@ -44,7 +44,14 @@ export function createContextMenu(): void {
     id: CONTEXT_MENU_ID,
     title: 'Translate Chinese Content',
     contexts: ['page'],
-    documentUrlPatterns: ['*://twitter.com/*', '*://x.com/*'],
+    documentUrlPatterns: [
+      '*://twitter.com/*',
+      '*://x.com/*',
+      '*://weibo.com/*',
+      '*://*.weibo.com/*',
+      '*://weibo.cn/*',
+      '*://*.weibo.cn/*',
+    ],
   });
 }
 
@@ -93,17 +100,22 @@ export async function handleMessage(
   }
   const typedMessage = message as Message;
   const normalizeThreadUrl = (url: string): string => {
-    try {
-      const parsed = new URL(url);
-      const normalizedHost = normalizeTwitterHostname(parsed.hostname);
-      return `${normalizedHost}${parsed.pathname}`;
-    } catch {
-      return url;
-    }
+    // Use platform-aware URL normalization
+    return normalizeUrl(url);
   };
 
   const findThreadTab = async (url: string): Promise<{ id?: number; url?: string } | undefined> => {
-    const tabs = await browser.tabs.query({ url: ['*://twitter.com/*', '*://x.com/*'] });
+    // Query all supported platforms
+    const tabs = await browser.tabs.query({
+      url: [
+        '*://twitter.com/*',
+        '*://x.com/*',
+        '*://weibo.com/*',
+        '*://*.weibo.com/*',
+        '*://weibo.cn/*',
+        '*://*.weibo.cn/*',
+      ],
+    });
     const target = normalizeThreadUrl(url);
     return tabs.find((tab) => tab.url && normalizeThreadUrl(tab.url) === target);
   };
@@ -270,9 +282,9 @@ export async function handleBrowserActionClick(tab: { id?: number; url?: string 
     return;
   }
 
-  // Only toggle panel on Twitter/X pages (non-Twitter pages show popup instead)
+  // Only toggle panel on supported platform pages (other pages show popup instead)
   const url = tab.url || '';
-  if (!isTwitterUrl(url)) {
+  if (!isSupportedPlatformUrl(url)) {
     return;
   }
 

@@ -532,7 +532,7 @@ describe('Translation View', () => {
       vi.mocked(translateQuickStreaming).mockImplementation(
         async (_tweets, _apiKey, callbacks) => {
           callbacks.onTranslation(result.translations[0]);
-          callbacks.onComplete(result.usage);
+          await callbacks.onComplete(result.usage);
         }
       );
 

@@ -1,4 +1,5 @@
 import type { TranslationResult } from '../translator';
+import { normalizeUrl } from '../platforms';
 
 export interface CacheContext {
   commentLimit?: number;
@@ -102,15 +103,11 @@ export class SessionCache {
   static generateCacheKey(url: string, context?: CacheContext): string {
     const limit = typeof context?.commentLimit === 'number' ? context.commentLimit : 'default';
     try {
-      const parsed = new URL(url);
-
-      // Normalize twitter.com and x.com to same domain
-      const normalizedHost = parsed.hostname.replace(/(^|\.)x\.com$/, '$1twitter.com');
-
-      // Extract pathname without query params
-      const pathname = parsed.pathname;
-
-      return `${normalizedHost}${pathname}::limit=${limit}`;
+      // Use platform-aware URL normalization
+      const normalizedUrl = normalizeUrl(url);
+      // Remove protocol for cache key
+      const withoutProtocol = normalizedUrl.replace(/^https?:\/\//, '');
+      return `${withoutProtocol}::limit=${limit}`;
     } catch {
       // If URL parsing fails, use the raw URL
       return `${url}::limit=${limit}`;

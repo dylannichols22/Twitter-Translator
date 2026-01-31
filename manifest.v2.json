@@ -12,6 +12,10 @@
     "https://*.twitter.com/*",
     "https://x.com/*",
     "https://*.x.com/*",
+    "https://weibo.com/*",
+    "https://*.weibo.com/*",
+    "https://weibo.cn/*",
+    "https://*.weibo.cn/*",
     "https://api.anthropic.com/*"
   ],
   "icons": {
@@ -32,7 +36,11 @@
         "https://twitter.com/*",
         "https://*.twitter.com/*",
         "https://x.com/*",
-        "https://*.x.com/*"
+        "https://*.x.com/*",
+        "https://weibo.com/*",
+        "https://*.weibo.com/*",
+        "https://weibo.cn/*",
+        "https://*.weibo.cn/*"
       ],
       "js": ["content.js"]
     }

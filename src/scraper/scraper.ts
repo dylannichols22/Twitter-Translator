@@ -1,3 +1,5 @@
+import { getCurrentPlatform, Platform, twitterPlatform } from '../platforms';
+
 export interface Tweet {
   id: string;
   text: string;
@@ -24,111 +26,32 @@ export interface ScrapeOptions {
   scrollIdleRounds?: number;
 }
 
-export const TWEET_SELECTOR = 'article[data-testid="tweet"], div[data-testid="tweet"]';
-const TWEET_ID_ATTRIBUTES = ['data-tweet-id', 'data-item-id', 'data-id', 'id'] as const;
+/**
+ * Gets the post container selector for the current platform.
+ * Falls back to Twitter selector if platform unknown.
+ */
+export function getPostSelector(): string {
+  const platform = getCurrentPlatform();
+  return platform?.selectors.postContainer ?? twitterPlatform.selectors.postContainer;
+}
 
+/** @deprecated Use getPostSelector() instead for platform-aware selector */
+export const TWEET_SELECTOR = 'article[data-testid="tweet"], div[data-testid="tweet"]';
+
+/**
+ * Scrapes posts from the current page using platform-aware selectors.
+ */
 export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
   const { commentLimit, excludeIds } = options;
-  const articles = Array.from(document.querySelectorAll(TWEET_SELECTOR))
-    .filter((article) => !article.parentElement?.closest('[data-testid="tweet"]'));
+
+  // Get the current platform (falls back to Twitter if unknown)
+  const platform: Platform = getCurrentPlatform() ?? twitterPlatform;
+
+  const postSelector = platform.selectors.postContainer;
+  const articles = Array.from(document.querySelectorAll(postSelector))
+    .filter((article) => !article.parentElement?.closest(postSelector));
   const tweets: Tweet[] = [];
   const rowInfos: Array<{ parent: Element | null; index: number }> = [];
-
-  const getTweetIdFromLink = (href: string): string => {
-    const idMatch = href.match(/\/status\/(\d+)/);
-    return idMatch ? idMatch[1] : '';
-  };
-
-  const getTweetIdFromElementAttributes = (article: Element): string => {
-    for (const attr of TWEET_ID_ATTRIBUTES) {
-      const value = article.getAttribute(attr);
-      if (!value) continue;
-      const match = value.match(/(\d{5,})/);
-      if (match) return match[1];
-    }
-    return '';
-  };
-
-  const findPrimaryStatusLink = (article: Element): HTMLAnchorElement | null => {
-    const timeLinks = Array.from(article.querySelectorAll('time'))
-      .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
-      .filter((link): link is HTMLAnchorElement => !!link);
-
-    for (const link of timeLinks) {
-      if (link.closest('[data-testid="tweet"]') === article) {
-        return link;
-      }
-    }
-
-    const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
-      .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
-      .filter((link) => link.closest('[data-testid="tweet"]') === article);
-
-    return links[0] ?? null;
-  };
-
-  const getStatusLink = (article: Element): HTMLAnchorElement | null => {
-    return findPrimaryStatusLink(article);
-  };
-
-  const getStatusId = (article: Element): string => {
-    const attributeId = getTweetIdFromElementAttributes(article);
-    if (attributeId) return attributeId;
-
-    const statusLink = getStatusLink(article) ?? article.querySelector('a[href*="/status/"]');
-    const href = statusLink?.getAttribute('href') ?? '';
-    return getTweetIdFromLink(href);
-  };
-
-  const getStatusUrl = (article: Element): string | undefined => {
-    const statusLink = getStatusLink(article);
-    const href = statusLink?.getAttribute('href') ?? '';
-    if (!href) return undefined;
-    if (href.startsWith('http')) return href;
-    return `${window.location.origin}${href}`;
-  };
-
-  const getReplyCount = (article: Element): number | undefined => {
-    const replyButton = article.querySelector('[data-testid="reply"]');
-    if (!replyButton) return undefined;
-
-    const label = replyButton.getAttribute('aria-label') ?? replyButton.textContent ?? '';
-    const match = label.match(/(\d+)/);
-    if (match) {
-      return Number.parseInt(match[1], 10);
-    }
-    return undefined;
-  };
-
-  const isInlineReply = (article: Element): boolean => {
-    const hasShowReplies = (el: Element | null): boolean => {
-      if (!el) return false;
-      const hasTestId = !!el.querySelector('[data-testid="showMoreReplies"],[data-testid="showReplies"]');
-      if (hasTestId) return true;
-      const text = el.textContent?.toLowerCase() ?? '';
-      return text.includes('show replies') || text.includes('show more replies');
-    };
-
-    const cell = article.closest('[data-testid="cellInnerDiv"]');
-    if (hasShowReplies(cell?.previousElementSibling ?? null)) {
-      return true;
-    }
-
-    if (hasShowReplies(article.previousElementSibling)) {
-      return true;
-    }
-
-    return false;
-  };
-
-  const getRowInfo = (article: Element): { parent: Element | null; index: number } => {
-    const row = article.closest('[data-testid="cellInnerDiv"]') ?? article.parentElement;
-    if (!row || !row.parentElement) {
-      return { parent: null, index: -1 };
-    }
-    const siblings = Array.from(row.parentElement.children);
-    return { parent: row.parentElement, index: siblings.indexOf(row) };
-  };
 
   const hashString = (value: string): string => {
     let hash = 0;
@@ -144,24 +67,41 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     return `fallback-${hashString(base)}`;
   };
 
+  const getRowInfo = (article: Element): { parent: Element | null; index: number } => {
+    const cellSelector = platform.selectors.cellContainer;
+    const row = article.closest(cellSelector) ?? article.parentElement;
+    if (!row || !row.parentElement) {
+      return { parent: null, index: -1 };
+    }
+    const siblings = Array.from(row.parentElement.children);
+    return { parent: row.parentElement, index: siblings.indexOf(row) };
+  };
+
   articles.forEach((article, index) => {
-    // Extract text
-    const tweetTextEl = article.querySelector('[data-testid="tweetText"]');
-    const text = tweetTextEl?.textContent?.trim() ?? '';
+    // Extract text using platform selector
+    const textEl = article.querySelector(platform.selectors.postText);
+    const text = textEl?.textContent?.trim() ?? '';
 
-    // Extract author
-    const userNameEl = article.querySelector('[data-testid="User-Name"]');
-    const author = userNameEl?.textContent?.trim() ?? '';
+    // Extract author using platform selector
+    const authorEl = article.querySelector(platform.selectors.authorName);
+    const author = authorEl?.textContent?.trim() ?? '';
 
-    // Extract timestamp
-    const timeEl = article.querySelector('time');
-    const timestamp = timeEl?.getAttribute('datetime') ?? '';
+    // Extract timestamp using platform selector
+    const timeEl = article.querySelector(platform.selectors.timestamp);
+    const timestamp = timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? '';
 
-    // Extract ID from status link
-    const resolvedId = getStatusId(article);
+    // Extract ID using platform method
+    const resolvedId = platform.extractPostIdFromElement(article);
     const id = resolvedId || buildFallbackId(text, author, timestamp);
-    const replyCount = getReplyCount(article);
-    const url = getStatusUrl(article);
+
+    // Get reply status using platform method
+    const hasReplies = platform.hasReplies(article);
+
+    // Get URL using platform method
+    const url = platform.getPostUrl(article);
+
+    // Check if inline reply using platform method
+    const inlineReply = platform.isInlineReply(article);
 
     // First tweet is main post
     const isMainPost = index === 0;
@@ -173,8 +113,8 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
       timestamp,
       isMainPost,
       url,
-      hasReplies: replyCount === undefined ? undefined : replyCount > 0,
-      inlineReply: isInlineReply(article),
+      hasReplies,
+      inlineReply,
     });
 
     rowInfos.push(getRowInfo(article));
