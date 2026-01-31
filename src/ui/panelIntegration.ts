@@ -11,7 +11,7 @@
 import { PanelController, CachedTranslation } from './panelController';
 import { UrlWatcher, isTwitterThreadUrl, extractThreadId } from './urlWatcher';
 import { MESSAGE_TYPES } from '../messages';
-import { scrapeTweets, Tweet } from '../scraper';
+import { scrapeTweets, Tweet, TWEET_SELECTOR } from '../scraper';
 import { translateQuickStreaming, getBreakdown, Breakdown } from '../translator';
 import { renderBreakdownContent } from './breakdown';
 
@@ -215,33 +215,14 @@ export class PanelIntegration {
       if (!main) return null;
 
       // Get first article in main column (not nested)
-      const articles = main.querySelectorAll('article[data-testid="tweet"]');
+      const articles = main.querySelectorAll(TWEET_SELECTOR);
       for (const article of articles) {
         // Skip nested tweets (quotes)
-        if (article.parentElement?.closest('article[data-testid="tweet"]')) {
+        if (article.parentElement?.closest('[data-testid="tweet"]')) {
           continue;
         }
-
-        // Find status link in this article
-        const timeLinks = Array.from(article.querySelectorAll('time'))
-          .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
-          .filter((link): link is HTMLAnchorElement => !!link);
-
-        for (const link of timeLinks) {
-          if (link.closest('article[data-testid="tweet"]') === article) {
-            const href = link.getAttribute('href') ?? '';
-            const match = href.match(/\/status\/(\d+)/);
-            if (match) return match[1];
-          }
-        }
-
-        // Fallback: any status link in the article
-        const statusLink = article.querySelector('a[href*="/status/"]');
-        if (statusLink) {
-          const href = statusLink.getAttribute('href') ?? '';
-          const match = href.match(/\/status\/(\d+)/);
-          if (match) return match[1];
-        }
+        const id = this.getStatusIdFromElement(article);
+        if (id) return id;
       }
       return null;
     };
@@ -270,6 +251,11 @@ export class PanelIntegration {
       console.debug('[Panel] gateThreadReady polling', { targetThreadId, primaryId });
 
       if (primaryId === targetThreadId) {
+        return true;
+      }
+
+      const visibleIds = this.getMainColumnTweetIds();
+      if (visibleIds.has(targetThreadId)) {
         return true;
       }
 
@@ -430,31 +416,53 @@ export class PanelIntegration {
     }
 
     const ids = new Set<string>();
-    const articles = main.querySelectorAll('article[data-testid="tweet"]');
+    const articles = main.querySelectorAll(TWEET_SELECTOR);
 
     for (const article of articles) {
       // Skip nested tweets (quotes)
-      if (article.parentElement?.closest('article[data-testid="tweet"]')) {
+      if (article.parentElement?.closest('[data-testid="tweet"]')) {
         continue;
       }
 
-      // Extract tweet ID from status link
-      const timeLinks = Array.from(article.querySelectorAll('time'))
-        .map((t) => t.closest('a[href*="/status/"]'))
-        .filter((l): l is HTMLAnchorElement => !!l);
-
-      for (const link of timeLinks) {
-        if (link.closest('article[data-testid="tweet"]') === article) {
-          const match = (link.getAttribute('href') ?? '').match(/\/status\/(\d+)/);
-          if (match) {
-            ids.add(match[1]);
-            break;
-          }
-        }
+      const id = this.getStatusIdFromElement(article);
+      if (id) {
+        ids.add(id);
       }
     }
 
     return ids;
+  }
+
+  /**
+   * Extracts tweet ID from a tweet element (desktop or mobile).
+   */
+  private getStatusIdFromElement(article: Element): string | null {
+    const attrCandidates = ['data-tweet-id', 'data-item-id', 'data-id', 'id'];
+    for (const attr of attrCandidates) {
+      const value = article.getAttribute(attr);
+      if (!value) continue;
+      const match = value.match(/(\d{5,})/);
+      if (match) return match[1];
+    }
+
+    const timeLinks = Array.from(article.querySelectorAll('time'))
+      .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
+      .filter((link): link is HTMLAnchorElement => !!link);
+
+    for (const link of timeLinks) {
+      if (link.closest('[data-testid="tweet"]') === article) {
+        const match = (link.getAttribute('href') ?? '').match(/\/status\/(\d+)/);
+        if (match) return match[1];
+      }
+    }
+
+    const statusLink = article.querySelector('a[href*="/status/"]');
+    if (statusLink) {
+      const match = (statusLink.getAttribute('href') ?? '').match(/\/status\/(\d+)/);
+      if (match) return match[1];
+    }
+
+    return null;
   }
 
   /**
@@ -758,7 +766,6 @@ export class PanelIntegration {
     this.activeSourceUrl = null;
     this.activeThreadId = null;
     this.breakdownsInFlight.clear();
-    this.breakdownCache.clear();
     this.tweets = [];
     this.currentTweets.clear();
     this.translationsInFlight.clear();

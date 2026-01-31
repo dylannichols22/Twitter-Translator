@@ -71,6 +71,18 @@ describe('Twitter Scraper', () => {
       expect(result.tweets[2].text).toBe('第三条');
     });
 
+    it('extracts tweets from mobile div containers', () => {
+      document.body.innerHTML = `
+        <div data-testid="tweet">
+          <div data-testid="tweetText"><span>Mobile tweet</span></div>
+        </div>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets).toHaveLength(1);
+      expect(result.tweets[0].text).toBe('Mobile tweet');
+    });
+
     it('respects comment limit parameter', () => {
       document.body.innerHTML = `
         <article data-testid="tweet">
@@ -145,6 +157,17 @@ describe('Twitter Scraper', () => {
       const result = scrapeTweets();
       expect(result.tweets[0].id).toBe('1234567890');
       expect(result.tweets[0].url).toBe('https://twitter.com/user/status/1234567890');
+    });
+
+    it('extracts tweet ID from data attributes when links are missing', () => {
+      document.body.innerHTML = `
+        <article data-testid="tweet" data-tweet-id="9876543210">
+          <div data-testid="tweetText"><span>Data attribute tweet</span></div>
+        </article>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets[0].id).toBe('9876543210');
     });
     it('filters out excluded tweet IDs', () => {
       document.body.innerHTML = `

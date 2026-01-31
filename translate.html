@@ -648,6 +648,33 @@
         opacity: 0.5;
       }
     }
+
+    @media (max-width: 720px) {
+      body {
+        max-width: none;
+        border-left: none;
+        border-right: none;
+      }
+
+      .header {
+        padding-top: calc(12px + env(safe-area-inset-top));
+        padding-left: calc(16px + env(safe-area-inset-left));
+        padding-right: calc(16px + env(safe-area-inset-right));
+      }
+
+      #tweets-container {
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+
+      .nav-back,
+      .tweet-action-btn,
+      .toast-dismiss {
+        min-width: 44px;
+        min-height: 44px;
+      }
+    }
   </style>
 </head>
 <body>

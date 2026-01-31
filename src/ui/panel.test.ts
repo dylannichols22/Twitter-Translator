@@ -253,4 +253,18 @@ describe('Panel Styles', () => {
   it('PANEL_STYLES includes reduced motion support', () => {
     expect(PANEL_STYLES).toContain('prefers-reduced-motion: reduce');
   });
+
+  it('PANEL_STYLES includes mobile layout overrides', () => {
+    expect(PANEL_STYLES).toContain('@media (max-width: 720px)');
+  });
+
+  it('PANEL_STYLES includes safe-area inset padding on mobile', () => {
+    expect(PANEL_STYLES).toContain('env(safe-area-inset-top)');
+    expect(PANEL_STYLES).toContain('env(safe-area-inset-bottom)');
+  });
+
+  it('PANEL_STYLES enforces 44px touch targets on mobile', () => {
+    expect(PANEL_STYLES).toContain('min-height: 44px');
+    expect(PANEL_STYLES).toContain('min-width: 44px');
+  });
 });

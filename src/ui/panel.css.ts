@@ -617,6 +617,51 @@ body.tt-panel-resizing .twitter-translator-panel .panel-resize-handle::after {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Mobile / Small Viewport Support */
+@media (max-width: 720px) {
+  .twitter-translator-panel {
+    left: 0;
+    right: 0;
+    width: 100vw;
+    min-width: 100vw;
+    max-width: 100vw;
+    border-left: none;
+    box-shadow: none;
+    resize: none;
+  }
+
+  .twitter-translator-panel .panel-resize-handle {
+    display: none;
+  }
+
+  .twitter-translator-panel .panel-header {
+    padding-top: calc(12px + env(safe-area-inset-top));
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
+
+  .twitter-translator-panel .panel-content {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .twitter-translator-panel .panel-footer {
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    padding-left: calc(16px + env(safe-area-inset-left));
+    padding-right: calc(16px + env(safe-area-inset-right));
+  }
+
+  .twitter-translator-panel .panel-close-btn,
+  .twitter-translator-panel .panel-load-more,
+  .twitter-translator-panel .tweet-action-btn,
+  .twitter-translator-panel .save-btn,
+  .twitter-translator-panel .save-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
 `;
 
 /**
@@ -643,7 +688,6 @@ export function removePanelStyles(): void {
     style.remove();
   }
 }
-
 
 
 

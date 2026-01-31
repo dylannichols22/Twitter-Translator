@@ -13,6 +13,7 @@ const mockTabs = {
 
 const mockRuntime = {
   sendMessage: vi.fn(),
+  getPlatformInfo: vi.fn(),
 };
 
 (globalThis as unknown as { browser: unknown }).browser = {
@@ -49,6 +50,7 @@ describe('Popup', () => {
 
     beforeEach(() => {
       mockTabs.query.mockResolvedValue([]);
+      mockRuntime.getPlatformInfo.mockResolvedValue({ os: 'win' });
       document.body.innerHTML = `
         <div id="translate-btn"></div>
         <button id="toggle-panel-btn" class="hidden"></button>
@@ -75,6 +77,17 @@ describe('Popup', () => {
 
         expect(translateBtn).toBeTruthy();
         expect(settingsBtn).toBeTruthy();
+      });
+
+      it('hides panel toggle on Android', async () => {
+        const toggleBtn = document.getElementById('toggle-panel-btn');
+        toggleBtn?.classList.remove('hidden');
+
+        mockRuntime.getPlatformInfo.mockResolvedValue({ os: 'android' });
+
+        await (controller as unknown as { applyAndroidLayout: () => Promise<void> }).applyAndroidLayout();
+
+        expect(toggleBtn?.classList.contains('hidden')).toBe(true);
       });
     });
 

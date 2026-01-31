@@ -39,6 +39,7 @@ export class PopupController {
 
     this.bindEvents();
     void this.updatePanelToggleVisibility();
+    void this.applyAndroidLayout();
   }
 
   private bindEvents(): void {
@@ -70,6 +71,21 @@ export class PopupController {
     } catch (error) {
       console.error('Failed to determine active tab:', error);
       this.togglePanelBtn.classList.add('hidden');
+    }
+  }
+
+  private async applyAndroidLayout(): Promise<void> {
+    if (!this.togglePanelBtn) {
+      return;
+    }
+
+    try {
+      const platform = await browser.runtime.getPlatformInfo?.();
+      if (platform?.os === 'android') {
+        this.togglePanelBtn.classList.add('hidden');
+      }
+    } catch (error) {
+      console.error('Failed to detect platform:', error);
     }
   }
 

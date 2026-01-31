@@ -206,6 +206,65 @@ describe('Activation integration flows', () => {
     expect(background.MESSAGE_TYPES.OPEN_TRANSLATE_PAGE).toBeDefined();
   });
 
+  it('popup flow scrapes mobile tweet containers', async () => {
+    const { browser } = createMockBrowser();
+    (globalThis as unknown as { browser: unknown }).browser = browser;
+
+    Object.defineProperty(window, 'location', {
+      value: { href: 'https://twitter.com/user/status/2' },
+      writable: true,
+      configurable: true,
+    });
+
+    document.body.innerHTML = `
+      <div id="translate-btn"></div>
+      <div id="settings-btn"></div>
+      <div id="main-view"></div>
+      <div id="settings-view" class="hidden"></div>
+      <input id="api-key-input" type="password" />
+      <input id="comment-limit-input" type="number" />
+      <button id="save-settings-btn"></button>
+      <button id="back-btn"></button>
+      <div id="cost-this-week"></div>
+      <div id="cost-this-month"></div>
+      <div id="cost-all-time"></div>
+      <div id="status-message"></div>
+      <div data-testid="tweet">
+        <div data-testid="User-Name">MobileUser</div>
+        <div data-testid="tweetText"><span>Mobile ä½ å¥½</span></div>
+        <time datetime="2024-01-16T10:30:00.000Z">Jan 16</time>
+        <a href="/user/status/222">link</a>
+      </div>
+    `;
+
+    browser.storage.local.get.mockResolvedValue({
+      settings: { apiKey: 'key', commentLimit: 10 },
+    });
+
+    const background = await import('../background');
+    const content = await import('../content');
+    const { PopupController } = await import('../popup/popup');
+
+    browser.tabs.query.mockResolvedValue([{ id: 2, url: 'https://twitter.com/user/status/2' }]);
+    browser.tabs.sendMessage.mockImplementation(async (_tabId: number, message: unknown) => {
+      return await content.handleMessage(message as never);
+    });
+
+    const controller = new PopupController();
+    await controller.translateCurrentPage();
+
+    const created = browser.tabs.create.mock.calls[0][0];
+    const createdUrl = new URL(created.url);
+    const payloadKey = createdUrl.searchParams.get('payloadKey') || '';
+    const payload = await browser.storage.session.get([payloadKey]);
+    const data = (payload as Record<string, { tweets: Array<{ text: string }>; url: string }>)[payloadKey];
+
+    expect(data.tweets).toHaveLength(1);
+    expect(data.tweets[0].text).toContain('Mobile ä½ å¥½');
+    expect(data.url).toBe('https://twitter.com/user/status/2');
+    expect(background.MESSAGE_TYPES.OPEN_TRANSLATE_PAGE).toBeDefined();
+  });
+
   it('uses comment limit from settings when scraping', async () => {
     const { browser } = createMockBrowser();
     (globalThis as unknown as { browser: unknown }).browser = browser;

@@ -24,10 +24,13 @@ export interface ScrapeOptions {
   scrollIdleRounds?: number;
 }
 
+export const TWEET_SELECTOR = 'article[data-testid="tweet"], div[data-testid="tweet"]';
+const TWEET_ID_ATTRIBUTES = ['data-tweet-id', 'data-item-id', 'data-id', 'id'] as const;
+
 export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
   const { commentLimit, excludeIds } = options;
-  const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
-    .filter((article) => !article.parentElement?.closest('article[data-testid="tweet"]'));
+  const articles = Array.from(document.querySelectorAll(TWEET_SELECTOR))
+    .filter((article) => !article.parentElement?.closest('[data-testid="tweet"]'));
   const tweets: Tweet[] = [];
   const rowInfos: Array<{ parent: Element | null; index: number }> = [];
 
@@ -36,20 +39,30 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     return idMatch ? idMatch[1] : '';
   };
 
+  const getTweetIdFromElementAttributes = (article: Element): string => {
+    for (const attr of TWEET_ID_ATTRIBUTES) {
+      const value = article.getAttribute(attr);
+      if (!value) continue;
+      const match = value.match(/(\d{5,})/);
+      if (match) return match[1];
+    }
+    return '';
+  };
+
   const findPrimaryStatusLink = (article: Element): HTMLAnchorElement | null => {
     const timeLinks = Array.from(article.querySelectorAll('time'))
       .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
       .filter((link): link is HTMLAnchorElement => !!link);
 
     for (const link of timeLinks) {
-      if (link.closest('article[data-testid="tweet"]') === article) {
+      if (link.closest('[data-testid="tweet"]') === article) {
         return link;
       }
     }
 
     const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
       .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
-      .filter((link) => link.closest('article[data-testid="tweet"]') === article);
+      .filter((link) => link.closest('[data-testid="tweet"]') === article);
 
     return links[0] ?? null;
   };
@@ -59,7 +72,10 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
   };
 
   const getStatusId = (article: Element): string => {
-    const statusLink = getStatusLink(article);
+    const attributeId = getTweetIdFromElementAttributes(article);
+    if (attributeId) return attributeId;
+
+    const statusLink = getStatusLink(article) ?? article.querySelector('a[href*="/status/"]');
     const href = statusLink?.getAttribute('href') ?? '';
     return getTweetIdFromLink(href);
   };
@@ -123,8 +139,8 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     return Math.abs(hash).toString(36);
   };
 
-  const buildFallbackId = (text: string, author: string, timestamp: string, index: number): string => {
-    const base = `${author}|${timestamp}|${text}|${index}`;
+  const buildFallbackId = (text: string, author: string, timestamp: string): string => {
+    const base = `${author}|${timestamp}|${text}`;
     return `fallback-${hashString(base)}`;
   };
 
@@ -143,7 +159,7 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
 
     // Extract ID from status link
     const resolvedId = getStatusId(article);
-    const id = resolvedId || buildFallbackId(text, author, timestamp, index);
+    const id = resolvedId || buildFallbackId(text, author, timestamp);
     const replyCount = getReplyCount(article);
     const url = getStatusUrl(article);
 

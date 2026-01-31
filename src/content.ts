@@ -1,4 +1,4 @@
-import { scrapeTweets, Tweet, ScrapeOptions } from './scraper';
+import { scrapeTweets, Tweet, ScrapeOptions, TWEET_SELECTOR } from './scraper';
 import { MESSAGE_TYPES, Message } from './messages';
 import { PanelIntegration } from './ui/panelIntegration';
 import { isTwitterUrl } from './utils/twitter';
@@ -18,14 +18,14 @@ const findPrimaryStatusLink = (article: Element): HTMLAnchorElement | null => {
     .filter((link): link is HTMLAnchorElement => !!link);
 
   for (const link of timeLinks) {
-    if (link.closest('article[data-testid="tweet"]') === article) {
+    if (link.closest('[data-testid="tweet"]') === article) {
       return link;
     }
   }
 
   const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
     .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
-    .filter((link) => link.closest('article[data-testid="tweet"]') === article);
+    .filter((link) => link.closest('[data-testid="tweet"]') === article);
 
   return links[0] ?? null;
 };
@@ -56,7 +56,7 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
 
     const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    const getTweetCount = () => document.querySelectorAll('article[data-testid="tweet"]').length;
+    const getTweetCount = () => document.querySelectorAll(TWEET_SELECTOR).length;
     const getCellCount = () => document.querySelectorAll('[data-testid="cellInnerDiv"]').length;
 
     const waitForCondition = async (
@@ -233,8 +233,8 @@ export class ContentScriptHandler {
         lastContextTweetUrl = null;
         return;
       }
-      let article = target.closest('article[data-testid="tweet"]');
-      const parentArticle = article?.parentElement?.closest('article[data-testid="tweet"]') ?? null;
+      let article = target.closest('[data-testid="tweet"]');
+      const parentArticle = article?.parentElement?.closest('[data-testid="tweet"]') ?? null;
       if (parentArticle) {
         article = parentArticle;
       }

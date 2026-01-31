@@ -213,6 +213,21 @@ describe('PanelController', () => {
       controller.clearCache();
       expect(controller.getCachedTranslation('1')).toBeUndefined();
     });
+
+    it('resetState preserves cached translations', () => {
+      const controller = new PanelController();
+
+      controller.cacheTranslation('1', {
+        id: '1',
+        naturalTranslation: 'Hello',
+        segments: [],
+        notes: []
+      });
+
+      controller.resetState();
+
+      expect(controller.getCachedTranslation('1')).toBeDefined();
+    });
   });
 
   describe('Usage Stats', () => {
