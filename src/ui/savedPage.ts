@@ -8,12 +8,16 @@ class SavedPageController {
   private exportBtn: HTMLElement | null;
   private exportModal: HTMLElement | null;
   private exportData: HTMLTextAreaElement | null;
+  private exportDeckName: HTMLInputElement | null;
+  private exportSummary: HTMLElement | null;
+  private downloadExportBtn: HTMLButtonElement | null;
   private copyExportBtn: HTMLElement | null;
   private closeModalBtn: HTMLElement | null;
   private filterBtns: NodeListOf<HTMLButtonElement>;
 
   private items: SavedItem[] = [];
   private currentFilter: SavedItemType | 'all' = 'all';
+  private exportFilename = '';
 
   constructor() {
     this.cardsContainer = document.getElementById('cards-container');
@@ -22,6 +26,9 @@ class SavedPageController {
     this.exportBtn = document.getElementById('export-btn');
     this.exportModal = document.getElementById('export-modal');
     this.exportData = document.getElementById('export-data') as HTMLTextAreaElement;
+    this.exportDeckName = document.getElementById('export-deck-name') as HTMLInputElement;
+    this.exportSummary = document.getElementById('export-summary');
+    this.downloadExportBtn = document.getElementById('download-anki') as HTMLButtonElement;
     this.copyExportBtn = document.getElementById('copy-export');
     this.closeModalBtn = document.getElementById('close-modal');
     this.filterBtns = document.querySelectorAll('.filter-btn');
@@ -41,6 +48,11 @@ class SavedPageController {
     this.exportBtn?.addEventListener('click', () => this.showExportModal());
     this.closeModalBtn?.addEventListener('click', () => this.hideExportModal());
     this.copyExportBtn?.addEventListener('click', () => this.copyExportData());
+    this.downloadExportBtn?.addEventListener('click', () => this.downloadExport());
+    this.exportDeckName?.addEventListener('input', () => {
+      this.saveDeckName();
+      void this.refreshExport();
+    });
 
     this.exportModal?.addEventListener('click', (e) => {
       if (e.target === this.exportModal) {
@@ -72,6 +84,9 @@ class SavedPageController {
     });
 
     this.render();
+    if (this.exportModal?.classList.contains('visible')) {
+      void this.refreshExport();
+    }
   }
 
   private getFilteredItems(): SavedItem[] {
@@ -211,14 +226,34 @@ class SavedPageController {
   }
 
   private async showExportModal(): Promise<void> {
+    this.exportModal?.classList.add('visible');
+    if (this.exportDeckName && !this.exportDeckName.value) {
+      const stored = localStorage.getItem('ankiDeckName');
+      this.exportDeckName.value = stored || 'Twitter Translator';
+    }
+    await this.refreshExport();
+  }
+
+  private async refreshExport(): Promise<void> {
     try {
       const response = await browser.runtime.sendMessage({
         type: MESSAGE_TYPES.EXPORT_SAVED_ITEMS,
+        data: {
+          deckName: this.exportDeckName?.value || undefined,
+          type: this.currentFilter === 'all' ? undefined : this.currentFilter,
+        },
       });
 
       if (response?.success && this.exportData) {
         this.exportData.value = response.data;
-        this.exportModal?.classList.add('visible');
+        if (typeof response.filename === 'string') {
+          this.exportFilename = response.filename;
+        }
+        if (typeof response.count === 'number' && this.exportSummary) {
+          const filterLabel =
+            this.currentFilter === 'all' ? 'All' : this.currentFilter === 'segment' ? 'Words' : this.currentFilter === 'sentence' ? 'Sentences' : 'Posts';
+          this.exportSummary.textContent = `${filterLabel}: ${response.count} item${response.count === 1 ? '' : 's'}`;
+        }
       }
     } catch (error) {
       console.error('Failed to export items:', error);
@@ -243,6 +278,31 @@ class SavedPageController {
       } catch {
         this.exportData.select();
         document.execCommand('copy');
+      }
+    }
+  }
+
+  private downloadExport(): void {
+    if (!this.exportData || !this.exportData.value) {
+      return;
+    }
+
+    const blob = new Blob([this.exportData.value], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = this.exportFilename || 'twitter-translator-anki-export.txt';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  private saveDeckName(): void {
+    if (this.exportDeckName) {
+      const value = this.exportDeckName.value.trim();
+      if (value.length > 0) {
+        localStorage.setItem('ankiDeckName', value);
       }
     }
   }

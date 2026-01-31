@@ -17,7 +17,8 @@
     "test:e2e": "npx playwright test",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
-    "validate": "npm run typecheck && npm run lint && npm run test"
+    "validate": "npm run typecheck && npm run lint && npm run test",
+    "ralph:anki": "powershell -ExecutionPolicy Bypass -File scripts/ralph-loop.ps1 -DocFile docs/anki-export-scope.md -CompletionToken \"DONE\""
   },
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.39.0",

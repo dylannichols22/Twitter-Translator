@@ -5,6 +5,7 @@ import { isTwitterUrl, normalizeTwitterHostname } from './utils/twitter';
 import { MESSAGE_TYPES, Message } from './messages';
 import { savedItemsManager } from './saved';
 import type { SavedItem, SavedItemType } from './saved';
+import { buildAnkiExport } from './anki/export';
 
 export const CONTEXT_MENU_ID = 'translate-chinese-content';
 
@@ -229,8 +230,10 @@ export async function handleMessage(
     }
 
     case MESSAGE_TYPES.EXPORT_SAVED_ITEMS: {
-      const json = await savedItemsManager.serialize();
-      return { success: true, data: json };
+      const exportData = typedMessage.data as { type?: SavedItemType; deckName?: string } | undefined;
+      const items = exportData?.type ? await savedItemsManager.getByType(exportData.type) : await savedItemsManager.getAll();
+      const result = buildAnkiExport(items, { deckName: exportData?.deckName });
+      return { success: true, data: result.content, filename: result.filename, count: result.count };
     }
 
     case MESSAGE_TYPES.IS_ITEM_SAVED: {

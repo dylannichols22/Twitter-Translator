@@ -349,6 +349,39 @@
       margin-bottom: 16px;
     }
 
+    .export-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .export-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      background: var(--surface);
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
+    .export-help {
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+      line-height: 1.4;
+    }
+
+    .export-summary {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 12px;
+    }
+
     .modal-actions {
       display: flex;
       justify-content: flex-end;
@@ -361,7 +394,7 @@
     <header>
       <h1>Saved Items</h1>
       <div class="header-actions">
-        <button id="export-btn" class="btn">Export JSON</button>
+        <button id="export-btn" class="btn">Export to Anki</button>
       </div>
     </header>
 
@@ -383,12 +416,20 @@
   </div>
 
   <!-- Export Modal -->
-  <div id="export-modal" class="modal-overlay">
+    <div id="export-modal" class="modal-overlay">
     <div class="modal">
-      <h2>Export Saved Items</h2>
+      <h2>Export to Anki</h2>
+      <div id="export-summary" class="export-summary"></div>
+      <label class="export-label" for="export-deck-name">Deck name</label>
+      <input id="export-deck-name" class="export-input" type="text" placeholder="Twitter Translator" />
+      <p class="export-help">
+        To import into an existing deck without resetting progress, use Anki's import dialog and enable
+        “Update existing notes when first field matches.”
+      </p>
       <textarea id="export-data" readonly></textarea>
       <div class="modal-actions">
-        <button id="copy-export" class="btn btn-primary">Copy to Clipboard</button>
+        <button id="download-anki" class="btn btn-primary">Download .txt</button>
+        <button id="copy-export" class="btn">Copy to Clipboard</button>
         <button id="close-modal" class="btn">Close</button>
       </div>
     </div>
