@@ -32,6 +32,9 @@ export class PanelController {
   private breakdownToggleCallback: BreakdownToggleCallback | null = null;
   private tweetIndexById: Map<string, number> = new Map();
 
+  // FIFO cache settings - cache persists across navigations to save API tokens
+  private static readonly MAX_CACHE_SIZE = 500;
+
   constructor() {
     injectPanelStyles();
     this.panel = new SidePanel();
@@ -125,9 +128,25 @@ export class PanelController {
 
   /**
    * Caches a translation by tweet ID.
+   * Uses FIFO eviction when cache exceeds MAX_CACHE_SIZE.
    */
   cacheTranslation(id: string, translation: CachedTranslation): void {
+    // If already cached, delete and re-add to move to end (most recent)
+    if (this.translationCache.has(id)) {
+      this.translationCache.delete(id);
+    }
+
     this.translationCache.set(id, translation);
+
+    // FIFO eviction: remove oldest entries if over max size
+    while (this.translationCache.size > PanelController.MAX_CACHE_SIZE) {
+      const oldestKey = this.translationCache.keys().next().value;
+      if (oldestKey) {
+        this.translationCache.delete(oldestKey);
+      } else {
+        break;
+      }
+    }
   }
 
   /**
@@ -429,7 +448,9 @@ export class PanelController {
 
   resetState(): void {
     this.clearTweets();
-    this.clearCache();
+    // NOTE: We intentionally do NOT clear the translation cache here.
+    // The cache persists across navigations to save API tokens.
+    // Cache uses FIFO eviction when it exceeds MAX_CACHE_SIZE.
     this.resetUsage();
     this.sourceUrl = '';
     this.panel.setFooterContent('');
