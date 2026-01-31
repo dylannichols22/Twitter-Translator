@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { ToastManager, type ToastType } from './toast';
+import { ToastManager } from './toast';
 
 describe('Toast Notifications', () => {
   let toastManager: ToastManager;

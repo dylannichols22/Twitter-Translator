@@ -13,7 +13,6 @@ import {
   TranslateViewController,
   groupSegmentsForTables,
 } from './translate';
-import { renderSkeletonContainer } from './skeleton';
 import type { TranslatedTweet, Segment } from '../translator';
 import type { Tweet } from '../scraper';
 

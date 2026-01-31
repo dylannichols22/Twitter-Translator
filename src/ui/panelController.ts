@@ -7,7 +7,7 @@ import { SidePanel } from './panel';
 import { injectPanelStyles, removePanelStyles } from './panel.css';
 import { renderTweet as renderTweetCard } from './translate';
 import type { Tweet } from '../scraper';
-import type { TranslatedTweet, UsageStats, QuickTranslation } from '../translator';
+import type { UsageStats, QuickTranslation } from '../translator';
 
 export interface CachedTranslation {
   id: string;

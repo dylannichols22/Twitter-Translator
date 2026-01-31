@@ -124,9 +124,11 @@ export class UrlWatcher {
 
     if (this.originalPushState) {
       history.pushState = this.originalPushState;
+      this.originalPushState = null;
     }
     if (this.originalReplaceState) {
       history.replaceState = this.originalReplaceState;
+      this.originalReplaceState = null;
     }
 
     this.started = false;

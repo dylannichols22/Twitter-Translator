@@ -340,7 +340,7 @@ export async function translateQuickStreaming(
       inputTokens: finalMessage.usage.input_tokens,
       outputTokens: finalMessage.usage.output_tokens,
     });
-  } catch (error) {
+  } catch {
     try {
       const response = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
@@ -410,7 +410,7 @@ export async function getBreakdown(
   let parsed: Breakdown;
   try {
     parsed = parseBreakdownResponse(jsonText);
-  } catch (error) {
+  } catch {
     throw new Error(
       `Failed to parse breakdown response. Response was: ${jsonText.slice(0, 500)}`
     );

@@ -299,7 +299,8 @@ export class PanelIntegration {
             tweetCount,
             domIds: domIds.slice(0, 6),
           });
-          if (firstId === targetThreadId || domIds.includes(targetThreadId)) {
+          // Only match when the FIRST tweet is the target thread (not just present somewhere in DOM)
+          if (firstId === targetThreadId) {
             return true;
           }
           await sleep(200);
@@ -331,10 +332,10 @@ export class PanelIntegration {
           scrapedUrls: tweets.slice(0, 3).map((tweet) => tweet.url),
           firstText: tweets[0]?.text?.slice(0, 120),
         });
+        // Only match when the FIRST scraped tweet is the target thread
         const hasTarget = !targetThreadId
           || tweets[0]?.id === targetThreadId
-          || tweets.some((tweet) => tweet.id === targetThreadId)
-          || tweets.some((tweet) => (tweet.url ?? '').includes(`/status/${targetThreadId}`));
+          || (tweets[0]?.url ?? '').includes(`/status/${targetThreadId}`);
 
         if (hasTarget) {
           matchedThread = true;

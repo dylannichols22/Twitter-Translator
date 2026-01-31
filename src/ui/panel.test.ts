@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SidePanel, createPanel, destroyPanel, isPanelOpen, togglePanel } from './panel';
 import { injectPanelStyles, removePanelStyles, PANEL_STYLES } from './panel.css';
 

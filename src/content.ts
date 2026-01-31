@@ -71,39 +71,6 @@ export async function handleMessage(message: Message): Promise<ScrapeResponse | 
       }
     };
 
-    const waitForStableCounts = async (
-      timeoutMs = 8000,
-      stableMs = 600,
-      intervalMs = 200
-    ): Promise<void> => {
-      const start = Date.now();
-      let lastTweetCount = -1;
-      let lastCellCount = -1;
-      let stableFor = 0;
-
-      while (Date.now() - start < timeoutMs) {
-        const tweetCount = getTweetCount();
-        const cellCount = getCellCount();
-
-        if (tweetCount > 0) {
-          if (tweetCount === lastTweetCount && cellCount === lastCellCount) {
-            stableFor += intervalMs;
-          } else {
-            stableFor = 0;
-          }
-
-          if (stableFor >= stableMs) {
-            return;
-          }
-
-          lastTweetCount = tweetCount;
-          lastCellCount = cellCount;
-        }
-
-        await sleep(intervalMs);
-      }
-    };
-
     const waitForDomStability = async (
       timeoutMs = 6000,
       stableMs = 400

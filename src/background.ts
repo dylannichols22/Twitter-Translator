@@ -212,7 +212,7 @@ export async function handleMessage(
 // Check if URL is a Twitter/X page
 
 // Update browser action popup based on current tab
-async function updateBrowserActionForTab(tabId: number, url: string): Promise<void> {
+async function updateBrowserActionForTab(tabId: number, _url: string): Promise<void> {
   // Always show popup; on Twitter it includes a Toggle Panel action.
   await browser.browserAction.setPopup({ tabId, popup: 'popup.html' });
 }
