@@ -119,6 +119,23 @@ describe('PanelIntegration', () => {
       expect(panel?.querySelector('.panel-empty')).not.toBeNull();
       integration.destroy();
     });
+
+    it('treats Weibo detail page as ready when main article lacks ids', async () => {
+      (window.location as { href: string }).href = 'https://m.weibo.cn/detail/5256920651793951';
+      (window.location as { pathname: string }).pathname = '/detail/5256920651793951';
+
+      document.body.innerHTML = '<div id="app"><article class="weibo-main"></article></div>';
+
+      const integration = new PanelIntegration();
+      (integration as unknown as { navToken: number }).navToken = 1;
+
+      const ready = await (integration as unknown as {
+        gateThreadReady: (id: string | null, token: number) => Promise<boolean>;
+      }).gateThreadReady('5256920651793951', 1);
+
+      expect(ready).toBe(true);
+      integration.destroy();
+    });
   });
 
   describe('Cleanup', () => {

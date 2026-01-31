@@ -22,19 +22,50 @@ const LEGACY_POST_REGEX = /^\/(\d+)\/([A-Za-z0-9]+)/;
 const WEIBO_SELECTORS: PlatformSelectors = {
   // Main post/weibo container - Weibo uses div with specific classes
   // TODO: Verify these selectors on weibo.com
-  postContainer: '[class*="wbpro-feed"], [class*="card-wrap"], .woo-box-flex[class*="Feed"]',
+  postContainer: [
+    'article.weibo-main',
+    '[class*="weibo-main"]',
+    '[class*="wbpro-feed"]',
+    '[class*="card-wrap"]',
+    '.woo-box-flex[class*="Feed"]',
+    '[class*="weibo-detail"]',
+    '[data-mid]',
+    '[data-id]',
+    '.comment-content .card',
+    'article',
+  ].join(', '),
 
   // Post text content
   // TODO: Weibo wraps text in spans with @mentions and #topics
-  postText: '[class*="detail_wbtext"], [class*="txt"], [class*="Feed_body"]',
+  postText: [
+    '[class*="detail_wbtext"]',
+    '[class*="txt"]',
+    '[class*="Feed_body"]',
+    '.weibo-text',
+    '[class*="weibo-text"]',
+    '.cmt-sub-txt',
+    '.comment-content .cmt-sub-txt p',
+  ].join(', '),
 
   // Author name - usually in a user card/link
   // TODO: Weibo shows username differently in feed vs detail
-  authorName: '[class*="head_name"], [class*="name"], a[usercard]',
+  authorName: [
+    '[class*="head_name"]',
+    '[class*="name"]',
+    'a[usercard]',
+    '[class*="weibo-user"] a',
+    '.m-text-cut',
+  ].join(', '),
 
   // Timestamp - Weibo uses relative times ("5分钟前") or absolute dates
   // TODO: May need to parse Chinese date formats
-  timestamp: '[class*="head_time"], [class*="time"], [class*="date"]',
+  timestamp: [
+    '[class*="head_time"]',
+    '[class*="time"]',
+    '[class*="date"]',
+    '[class*="weibo-time"]',
+    'time',
+  ].join(', '),
 
   // Reply/comment button
   // TODO: Weibo uses "评论" for comment button
@@ -46,11 +77,18 @@ const WEIBO_SELECTORS: PlatformSelectors = {
 
   // Main content column
   // TODO: Weibo's main content area structure
-  mainColumn: '[class*="main"], #app, [class*="Frame_main"]',
+  mainColumn: [
+    'article.weibo-main',
+    '[class*="weibo-main"]',
+    '[class*="main"]',
+    '#app',
+    '[class*="Frame_main"]',
+    '[class*="weibo-detail"]',
+  ].join(', '),
 
   // Cell/item container for individual posts
   // TODO: Weibo's list item wrapper
-  cellContainer: '[class*="card"], [class*="list_item"], [class*="Feed_item"]',
+  cellContainer: '[class*="card"], [class*="list_item"], [class*="Feed_item"], [class*="weibo-detail"], [class*="weibo-main"]',
 };
 
 class WeiboPlatform implements Platform {
@@ -141,20 +179,24 @@ class WeiboPlatform implements Platform {
     // Common patterns: data-mid, mid attribute, or in action URLs
 
     // Try common Weibo ID attributes
-    const idAttributes = ['data-mid', 'mid', 'data-id', 'id', 'data-oid'];
+    const idAttributes = ['data-mid', 'mid', 'data-id', 'data-oid'];
     for (const attr of idAttributes) {
       const value = element.getAttribute(attr);
-      if (value && /^[A-Za-z0-9]+$/.test(value)) {
-        return value;
-      }
+      if (!value) continue;
+      if (/^\d+$/.test(value)) return value;
+      if (/^[A-Za-z0-9]{6,}$/.test(value)) return value;
     }
 
     // Try to find ID in links within the element
-    const links = element.querySelectorAll('a[href*="/detail/"], a[href*="/status/"]');
+    const links = element.querySelectorAll(
+      'a[href*="/detail/"], a[href*="/status/"], a[href*="m.weibo.cn/detail/"]'
+    );
     for (const link of links) {
       const href = link.getAttribute('href') ?? '';
       const detailMatch = href.match(/\/detail\/(\d+)/);
       if (detailMatch) return detailMatch[1];
+      const mobileMatch = href.match(/m\.weibo\.cn\/detail\/(\d+)/);
+      if (mobileMatch) return mobileMatch[1];
     }
 
     // Try action-data attribute which sometimes contains mid
@@ -162,6 +204,19 @@ class WeiboPlatform implements Platform {
     if (actionData) {
       const midMatch = actionData.match(/mid=([A-Za-z0-9]+)/);
       if (midMatch) return midMatch[1];
+    }
+
+    // Fallback: check id attribute if it looks like a numeric/b62 post id
+    const elementId = element.getAttribute('id');
+    if (elementId && !/[._:\-]/.test(elementId)) {
+      if (/^\d+$/.test(elementId)) return elementId;
+      if (/^[A-Za-z0-9]{6,}$/.test(elementId)) return elementId;
+    }
+
+    // Final fallback: use URL for known detail pages (e.g., m.weibo.cn/detail/ID)
+    if (element.matches('article.weibo-main, [class*="weibo-main"]')) {
+      const fromUrl = this.extractPostId(window.location.href);
+      if (fromUrl) return fromUrl;
     }
 
     return null;

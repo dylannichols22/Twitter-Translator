@@ -229,12 +229,18 @@ export class PanelIntegration {
     };
 
     const postSelector = this.platform.selectors.postContainer;
-    const getPrimaryTweetId = (): string | null => {
+    const getPrimaryCandidates = (): Element[] => {
       const main = getMainColumn();
-      if (!main) return null;
+      if (!main) return [];
 
-      // Get first article in main column (not nested)
-      const articles = main.querySelectorAll(postSelector);
+      // Get articles in main column (not nested). Include main itself if it matches.
+      return [
+        ...(main.matches(postSelector) ? [main] : []),
+        ...main.querySelectorAll(postSelector),
+      ];
+    };
+    const getPrimaryTweetId = (): string | null => {
+      const articles = getPrimaryCandidates();
       for (const article of articles) {
         // Skip nested posts (quotes)
         if (article.parentElement?.closest(postSelector)) {
@@ -270,6 +276,15 @@ export class PanelIntegration {
       console.debug('[Panel] gateThreadReady polling', { targetThreadId, primaryId });
 
       if (primaryId === targetThreadId) {
+        return true;
+      }
+
+      if (
+        this.platform.name === 'weibo'
+        && targetThreadId
+        && !primaryId
+        && getPrimaryCandidates().length > 0
+      ) {
         return true;
       }
 
@@ -438,7 +453,24 @@ export class PanelIntegration {
 
     const ids = new Set<string>();
     const postSelector = this.platform.selectors.postContainer;
-    const articles = main.querySelectorAll(postSelector);
+    const articles = [
+      ...(main.matches(postSelector) ? [main] : []),
+      ...main.querySelectorAll(postSelector),
+    ];
+
+    const hashString = (value: string): string => {
+      let hash = 0;
+      for (let i = 0; i < value.length; i += 1) {
+        hash = (hash << 5) - hash + value.charCodeAt(i);
+        hash |= 0;
+      }
+      return Math.abs(hash).toString(36);
+    };
+
+    const buildFallbackId = (text: string, author: string, timestamp: string): string => {
+      const base = `${author}|${timestamp}|${text}`;
+      return `fallback-${hashString(base)}`;
+    };
 
     for (const article of articles) {
       // Skip nested posts (quotes)
@@ -449,6 +481,18 @@ export class PanelIntegration {
       const id = this.platform.extractPostIdFromElement(article);
       if (id) {
         ids.add(id);
+        continue;
+      }
+
+      const textEl = article.querySelector(this.platform.selectors.postText);
+      const text = textEl?.textContent?.trim() ?? '';
+      const authorEl = article.querySelector(this.platform.selectors.authorName);
+      const author = authorEl?.textContent?.trim() ?? '';
+      const timeEl = article.querySelector(this.platform.selectors.timestamp);
+      const timestamp = timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? '';
+
+      if (text || author || timestamp) {
+        ids.add(buildFallbackId(text, author, timestamp));
       }
     }
 

@@ -336,6 +336,44 @@ describe('Twitter Scraper', () => {
       expect(result.tweets[0].id).toBe('999');
       expect(result.tweets[0].url).toBe('https://twitter.com/user/status/999');
     });
+
+    it('scrapes Weibo comment blocks using fallback ids', () => {
+      Object.defineProperty(window, 'location', {
+        value: { href: 'https://m.weibo.cn/detail/5256920651793951' },
+        writable: true,
+        configurable: true,
+      });
+
+      document.body.innerHTML = `
+        <div id="app">
+          <article class="weibo-main">
+            <div class="detail_wbtext">主贴文本</div>
+            <h4 class="m-text-cut">作者</h4>
+            <span class="head_time">1-20 02:56</span>
+          </article>
+          <div class="comment-content">
+            <div class="card m-avatar-box lite-page-list">
+              <div class="card-wrap">
+                <div class="card-main">
+                  <div class="m-text-box">
+                    <h4 class="m-text-cut">评论用户</h4>
+                  </div>
+                  <div class="cmt-sub-txt"><p>评论内容</p></div>
+                  <span class="head_time">1-20 02:57</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const result = scrapeTweets();
+      expect(result.tweets.length).toBeGreaterThan(1);
+      const comment = result.tweets.find((tweet) => tweet.text.includes('评论内容'));
+      expect(comment).toBeTruthy();
+      expect(comment?.id.startsWith('fallback-')).toBe(true);
+      expect(comment?.author).toContain('评论用户');
+    });
   });
 });
 
