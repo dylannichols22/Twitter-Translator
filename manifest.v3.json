@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Twitter Chinese Translator",
+  "name": "Speak a lil' Chinese for 'em",
   "version": "0.1.7",
-  "description": "Translate Chinese Twitter content with AI-powered breakdown",
+  "description": "Translate Chinese Twitter/X content with AI-powered breakdowns",
+  "author": "sloppyjenkins@gmail.com",
   "permissions": [
     "activeTab",
     "storage",
@@ -15,13 +16,18 @@
     "https://*.x.com/*",
     "https://api.anthropic.com/*"
   ],
+  "icons": {
+    "48": "assets/icons/tt-icon-48.png",
+    "96": "assets/icons/tt-icon-96.png",
+    "128": "assets/icons/tt-icon-128.png"
+  },
   "background": {
     "service_worker": "background.js",
     "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Twitter Chinese Translator"
+    "default_title": "Speak a lil' Chinese for 'em"
   },
   "content_scripts": [
     {
