@@ -1,4 +1,4 @@
-﻿import { MESSAGE_TYPES } from '../messages';
+import { MESSAGE_TYPES } from '../messages';
 import { translateQuickStreaming, getBreakdown } from '../translator';
 import type { QuickTranslation, Breakdown, UsageStats, TranslatedTweet } from '../translator';
 import type { Tweet } from '../scraper';
@@ -11,6 +11,7 @@ import {
   groupSegmentsForTables,
   renderBreakdownContent,
 } from './breakdown';
+import { createPostSaveButton } from './saveButton';
 
 export { renderSegmentTable, renderNotes, groupSegmentsForTables };
 
@@ -142,6 +143,26 @@ export function renderTweet(
     defaultToggle();
   });
   actions.appendChild(breakdownToggle);
+
+  // Add Save Post button if we have segments
+  if ('segments' in translation && translation.segments.length > 0) {
+    const savePostBtn = createPostSaveButton({
+      segments: translation.segments.map((s) => ({
+        chinese: s.chinese,
+        pinyin: s.pinyin,
+        gloss: s.gloss,
+      })),
+      notes: 'notes' in translation ? translation.notes : [],
+      naturalTranslation: translation.naturalTranslation,
+      metadata: {
+        tweetId: tweet.id,
+        tweetUrl: tweet.url,
+        author: tweet.author,
+        timestamp: tweet.timestamp,
+      },
+    });
+    actions.appendChild(savePostBtn);
+  }
 
   body.appendChild(actions);
 

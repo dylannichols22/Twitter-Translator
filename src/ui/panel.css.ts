@@ -505,6 +505,81 @@ body.tt-panel-resizing .twitter-translator-panel .panel-resize-handle::after {
   display: none !important;
 }
 
+/* Save Icons and Buttons */
+.twitter-translator-panel .save-icon {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--tt-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s, color 0.2s, transform 0.2s;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.twitter-translator-panel .save-icon:hover {
+  color: var(--tt-accent);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.twitter-translator-panel .save-icon.saved {
+  color: var(--tt-accent);
+  opacity: 1;
+}
+
+.twitter-translator-panel .chinese-row td {
+  position: relative;
+}
+
+.twitter-translator-panel .chinese-row td:hover .save-icon {
+  opacity: 1;
+}
+
+.twitter-translator-panel .save-btn {
+  border: 1px solid var(--tt-border);
+  background: var(--tt-surface);
+  color: var(--tt-text);
+  border-radius: 9999px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.twitter-translator-panel .save-btn:hover {
+  background: var(--tt-bg-accent);
+  color: var(--tt-accent);
+}
+
+.twitter-translator-panel .save-btn.saved {
+  color: var(--tt-accent);
+  border-color: var(--tt-accent);
+  background: rgba(29, 155, 240, 0.1);
+}
+
+.twitter-translator-panel .segment-table-wrapper {
+  position: relative;
+}
+
+.twitter-translator-panel .save-sentence-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+
 /* Skeleton Loading */
 .twitter-translator-panel .skeleton {
   background: var(--tt-bg-accent);

@@ -49,9 +49,10 @@ describe('Translation View', () => {
       const table = renderSegmentTable(segments);
       const firstRow = table.rows[0];
 
-      expect(firstRow.cells[0].textContent).toBe('今天');
-      expect(firstRow.cells[1].textContent).toBe('天气');
-      expect(firstRow.cells[2].textContent).toBe('很好');
+      // Cells now contain save icons, so use toContain instead of toBe
+      expect(firstRow.cells[0].textContent).toContain('今天');
+      expect(firstRow.cells[1].textContent).toContain('天气');
+      expect(firstRow.cells[2].textContent).toContain('很好');
     });
 
     it('second row contains pinyin', () => {

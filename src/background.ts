@@ -3,6 +3,8 @@ import { CostTracker, calculateCost } from './cost';
 import { translationCache } from './cache';
 import { isTwitterUrl, normalizeTwitterHostname } from './utils/twitter';
 import { MESSAGE_TYPES, Message } from './messages';
+import { savedItemsManager } from './saved';
+import type { SavedItem, SavedItemType } from './saved';
 
 export const CONTEXT_MENU_ID = 'translate-chinese-content';
 
@@ -202,6 +204,39 @@ export async function handleMessage(
       // Log for smoke test - web-ext captures console output
       console.log('SMOKE_OK');
       return { success: true };
+    }
+
+    case MESSAGE_TYPES.SAVE_ITEM: {
+      const itemData = typedMessage.data as Omit<SavedItem, 'id' | 'savedAt'>;
+      const savedItem = await savedItemsManager.save(itemData);
+      return { success: true, item: savedItem };
+    }
+
+    case MESSAGE_TYPES.GET_SAVED_ITEMS: {
+      const filterData = typedMessage.data as { type?: SavedItemType } | undefined;
+      if (filterData?.type) {
+        const items = await savedItemsManager.getByType(filterData.type);
+        return { success: true, items };
+      }
+      const items = await savedItemsManager.getAll();
+      return { success: true, items };
+    }
+
+    case MESSAGE_TYPES.DELETE_SAVED_ITEM: {
+      const deleteData = typedMessage.data as { id: string };
+      const deleted = await savedItemsManager.delete(deleteData.id);
+      return { success: deleted };
+    }
+
+    case MESSAGE_TYPES.EXPORT_SAVED_ITEMS: {
+      const json = await savedItemsManager.serialize();
+      return { success: true, data: json };
+    }
+
+    case MESSAGE_TYPES.IS_ITEM_SAVED: {
+      const checkData = typedMessage.data as { chinese: string; type: SavedItemType };
+      const isDuplicate = await savedItemsManager.isDuplicate(checkData.chinese, checkData.type);
+      return { success: true, isSaved: isDuplicate };
     }
 
     default:

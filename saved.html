@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Saved Items - Twitter Translator</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      color-scheme: light dark;
+      --bg: #f6f7fb;
+      --bg-accent: #eef2f7;
+      --surface: #ffffff;
+      --surface-muted: #f3f6f9;
+      --text: #0f1419;
+      --muted: #536471;
+      --border: #dde4ea;
+      --accent: #1d9bf0;
+      --accent-strong: #1579c0;
+      --success: #00ba7c;
+      --danger: #f4212e;
+      --shadow: 0 10px 24px rgba(15, 20, 25, 0.08);
+      --shadow-soft: 0 3px 10px rgba(15, 20, 25, 0.06);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --bg-accent: #16181c;
+        --surface: #16181c;
+        --surface-muted: #1e2226;
+        --text: #e7e9ea;
+        --muted: #71767b;
+        --border: #2f3336;
+        --accent: #1d9bf0;
+        --accent-strong: #1a8cd8;
+        --success: #00ba7c;
+        --danger: #f4212e;
+        --shadow: none;
+        --shadow-soft: none;
+      }
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--text);
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .btn:hover {
+      background: var(--bg-accent);
+      color: var(--accent);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-strong);
+      color: white;
+    }
+
+    .btn-danger {
+      color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: rgba(244, 33, 46, 0.1);
+      border-color: var(--danger);
+    }
+
+    .filters {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+
+    .filter-btn:hover {
+      color: var(--text);
+    }
+
+    .filter-btn.active {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+
+    .stats {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 64px 24px;
+      color: var(--muted);
+    }
+
+    .empty-state h2 {
+      font-size: 20px;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+
+    /* Flashcard Grid */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px;
+    }
+
+    /* Flashcard */
+    .flashcard {
+      perspective: 1000px;
+      height: 200px;
+      cursor: pointer;
+    }
+
+    .flashcard-inner {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      transition: transform 0.6s;
+      transform-style: preserve-3d;
+    }
+
+    .flashcard.flipped .flashcard-inner {
+      transform: rotateY(180deg);
+    }
+
+    .flashcard-front,
+    .flashcard-back {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      border-radius: 16px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-soft);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .flashcard-front {
+      align-items: center;
+      justify-content: center;
+    }
+
+    .flashcard-back {
+      transform: rotateY(180deg);
+    }
+
+    .flashcard-type {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: var(--bg-accent);
+      color: var(--muted);
+    }
+
+    .flashcard-delete {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 28px;
+      height: 28px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s, color 0.2s;
+      opacity: 0;
+    }
+
+    .flashcard:hover .flashcard-delete {
+      opacity: 1;
+    }
+
+    .flashcard-delete:hover {
+      background: rgba(244, 33, 46, 0.1);
+      color: var(--danger);
+    }
+
+    .flashcard-chinese {
+      font-size: 32px;
+      font-weight: 500;
+      text-align: center;
+      word-break: break-word;
+    }
+
+    .flashcard-hint {
+      position: absolute;
+      bottom: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .flashcard-pinyin {
+      font-size: 18px;
+      color: var(--accent);
+      font-style: italic;
+      margin-bottom: 8px;
+    }
+
+    .flashcard-gloss {
+      font-size: 16px;
+      color: var(--text);
+      margin-bottom: 8px;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .flashcard-translation {
+      font-size: 13px;
+      color: var(--muted);
+      border-top: 1px solid var(--border);
+      padding-top: 8px;
+      max-height: 60px;
+      overflow-y: auto;
+    }
+
+    .flashcard-date {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    /* Export Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s, visibility 0.2s;
+    }
+
+    .modal-overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal {
+      background: var(--surface);
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 80vh;
+      overflow: auto;
+    }
+
+    .modal h2 {
+      font-size: 20px;
+      margin-bottom: 16px;
+    }
+
+    .modal textarea {
+      width: 100%;
+      height: 200px;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 12px;
+      background: var(--surface-muted);
+      color: var(--text);
+      resize: vertical;
+      margin-bottom: 16px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Saved Items</h1>
+      <div class="header-actions">
+        <button id="export-btn" class="btn">Export JSON</button>
+      </div>
+    </header>
+
+    <div class="filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="segment">Words</button>
+      <button class="filter-btn" data-filter="sentence">Sentences</button>
+      <button class="filter-btn" data-filter="post">Posts</button>
+    </div>
+
+    <div id="stats" class="stats"></div>
+
+    <div id="cards-container" class="cards-grid"></div>
+
+    <div id="empty-state" class="empty-state hidden">
+      <h2>No saved items yet</h2>
+      <p>Save words, sentences, or posts while translating to study them here.</p>
+    </div>
+  </div>
+
+  <!-- Export Modal -->
+  <div id="export-modal" class="modal-overlay">
+    <div class="modal">
+      <h2>Export Saved Items</h2>
+      <textarea id="export-data" readonly></textarea>
+      <div class="modal-actions">
+        <button id="copy-export" class="btn btn-primary">Copy to Clipboard</button>
+        <button id="close-modal" class="btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/ui/savedPage.ts"></script>
+</body>
+</html>

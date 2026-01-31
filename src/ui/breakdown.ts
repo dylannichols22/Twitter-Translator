@@ -1,17 +1,28 @@
 import type { Segment, Breakdown } from '../translator';
+import { createSegmentSaveIcon, createSentenceSaveButton, type SaveCallback } from './saveButton';
 
 const SENTENCE_END = /[。！？!?…]+$/;
 
-export function renderSegmentTable(segments: Segment[]): HTMLTableElement {
+export interface RenderOptions {
+  onSave?: SaveCallback;
+}
+
+export function renderSegmentTable(segments: Segment[], options?: RenderOptions): HTMLTableElement {
   const table = document.createElement('table');
   table.className = 'segment-table';
 
-  // Row 1: Chinese characters
+  // Row 1: Chinese characters with save icons
   const chineseRow = table.insertRow();
   chineseRow.className = 'chinese-row';
   segments.forEach((seg) => {
     const cell = chineseRow.insertCell();
     cell.textContent = seg.chinese;
+
+    const saveIcon = createSegmentSaveIcon(
+      { chinese: seg.chinese, pinyin: seg.pinyin, gloss: seg.gloss },
+      options?.onSave
+    );
+    cell.appendChild(saveIcon);
   });
 
   // Row 2: Pinyin
@@ -84,14 +95,24 @@ export function groupSegmentsForTables(segments: Segment[], maxSegments = 8): Se
   return groups;
 }
 
-export function renderBreakdownContent(breakdown: Breakdown): DocumentFragment {
+export function renderBreakdownContent(
+  breakdown: Breakdown,
+  options?: RenderOptions & { naturalTranslation?: string }
+): DocumentFragment {
   const fragment = document.createDocumentFragment();
   const groups = groupSegmentsForTables(breakdown.segments, 8);
 
   for (const group of groups) {
     const wrapper = document.createElement('div');
     wrapper.className = 'segment-table-wrapper';
-    wrapper.appendChild(renderSegmentTable(group));
+    wrapper.appendChild(renderSegmentTable(group, options));
+
+    const sentenceSaveBtn = createSentenceSaveButton(
+      { segments: group, naturalTranslation: options?.naturalTranslation },
+      options?.onSave
+    );
+    wrapper.appendChild(sentenceSaveBtn);
+
     fragment.appendChild(wrapper);
   }
 

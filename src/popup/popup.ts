@@ -8,6 +8,7 @@ export function formatCost(cost: number): string {
 export class PopupController {
   private translateBtn: HTMLElement | null;
   private togglePanelBtn: HTMLElement | null;
+  private viewSavedBtn: HTMLElement | null;
   private settingsBtn: HTMLElement | null;
   private saveSettingsBtn: HTMLElement | null;
   private backBtn: HTMLElement | null;
@@ -23,6 +24,7 @@ export class PopupController {
   constructor() {
     this.translateBtn = document.getElementById('translate-btn');
     this.togglePanelBtn = document.getElementById('toggle-panel-btn');
+    this.viewSavedBtn = document.getElementById('view-saved-btn');
     this.settingsBtn = document.getElementById('settings-btn');
     this.saveSettingsBtn = document.getElementById('save-settings-btn');
     this.backBtn = document.getElementById('back-btn');
@@ -42,9 +44,17 @@ export class PopupController {
   private bindEvents(): void {
     this.translateBtn?.addEventListener('click', () => this.translateCurrentPage());
     this.togglePanelBtn?.addEventListener('click', () => this.togglePanel());
+    this.viewSavedBtn?.addEventListener('click', () => this.openSavedPage());
     this.settingsBtn?.addEventListener('click', () => this.showSettings());
     this.saveSettingsBtn?.addEventListener('click', () => this.saveSettings());
     this.backBtn?.addEventListener('click', () => this.showMain());
+  }
+
+  async openSavedPage(): Promise<void> {
+    await browser.tabs.create({
+      url: browser.runtime.getURL('saved.html'),
+    });
+    window.close();
   }
 
   private async updatePanelToggleVisibility(): Promise<void> {

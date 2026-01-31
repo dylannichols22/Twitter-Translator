@@ -9,6 +9,7 @@ export default defineConfig({
       input: {
         popup: resolve(__dirname, 'popup.html'),
         translate: resolve(__dirname, 'translate.html'),
+        saved: resolve(__dirname, 'saved.html'),
       },
       output: {
         entryFileNames: '[name].js',
