@@ -52,6 +52,10 @@ export type UrlChangeCallback = (newUrl: string) => void;
 
 /**
  * Watches for URL changes in a Twitter SPA.
+ * Uses multiple detection methods for reliability:
+ * 1. History API hooks (pushState/replaceState)
+ * 2. popstate event listener (back/forward)
+ * 3. Polling fallback (catches any missed navigation)
  */
 export class UrlWatcher {
   private callback: UrlChangeCallback | null;
@@ -62,7 +66,11 @@ export class UrlWatcher {
   private popstateHandler: (() => void) | null = null;
   private originalPushState: History['pushState'] | null = null;
   private originalReplaceState: History['replaceState'] | null = null;
+  private pollIntervalId: ReturnType<typeof setInterval> | null = null;
   private started = false;
+
+  // Polling interval in ms - checks URL periodically as fallback
+  private static readonly POLL_INTERVAL_MS = 500;
 
   constructor(callback?: UrlChangeCallback, debounceMs = 200) {
     this.callback = callback ?? null;
@@ -106,6 +114,12 @@ export class UrlWatcher {
       this.checkUrlChange();
     };
     window.addEventListener('popstate', this.popstateHandler);
+
+    // Polling fallback - catches navigation that bypasses our hooks
+    // Twitter may cache history.pushState before our hooks are installed
+    this.pollIntervalId = setInterval(() => {
+      this.checkUrlChange();
+    }, UrlWatcher.POLL_INTERVAL_MS);
   }
 
   /**
@@ -115,6 +129,11 @@ export class UrlWatcher {
     if (this.debounceTimeoutId !== null) {
       clearTimeout(this.debounceTimeoutId);
       this.debounceTimeoutId = null;
+    }
+
+    if (this.pollIntervalId !== null) {
+      clearInterval(this.pollIntervalId);
+      this.pollIntervalId = null;
     }
 
     if (this.popstateHandler) {

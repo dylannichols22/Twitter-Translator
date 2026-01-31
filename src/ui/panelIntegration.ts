@@ -1,7 +1,11 @@
-﻿/**
+/**
  * Panel Integration
  * Ties together the panel controller, URL watcher, and scraper for a complete
  * side panel experience on Twitter pages.
+ *
+ * Architecture: Navigation Gate + Sync Loop (Hybrid Pattern)
+ * - Navigation boundary: beginNavigation() -> gateThreadReady()
+ * - Steady-state sync: startSyncLoop() -> sync() -> translateAndRender()
  */
 
 import { PanelController, CachedTranslation } from './panelController';
@@ -18,6 +22,28 @@ export class PanelIntegration {
   private tweets: Tweet[] = [];
   private breakdownCache: Map<string, Breakdown> = new Map();
   private commentLimit: number | undefined;
+
+  // Navigation token for rejecting stale work
+  private navToken = 0;
+
+  // AbortController for canceling in-flight operations
+  private abortController: AbortController | null = null;
+
+  // Current thread tracking
+  private activeSourceUrl: string | null = null;
+  private activeThreadId: string | null = null;
+
+  // Breakdown request tracking
+  private breakdownsInFlight: Set<string> = new Set();
+
+  // Sync loop state
+  private syncObserver: MutationObserver | null = null;
+  private syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly SYNC_DEBOUNCE_MS = 150;
+
+  // Track tweets currently being translated
+  private currentTweets: Map<string, Tweet> = new Map();
+  private translationsInFlight: Set<string> = new Set();
 
   constructor() {
     this.controller = new PanelController();
@@ -65,12 +91,22 @@ export class PanelIntegration {
       }
 
       if (!this.breakdownCache.has(tweet.id)) {
+        // Prevent duplicate breakdown requests
+        if (this.breakdownsInFlight.has(tweet.id)) {
+          breakdownEl.classList.remove('hidden');
+          article.classList.add('expanded');
+          return;
+        }
+
         if (!this.apiKey) {
           breakdownInner.innerHTML = '<div class="breakdown-error">API key is required for breakdowns</div>';
           breakdownEl.classList.remove('hidden');
           article.classList.add('expanded');
           return;
         }
+
+        this.breakdownsInFlight.add(tweet.id);
+
         // Show loading state
         breakdownInner.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
         breakdownEl.classList.remove('hidden');
@@ -84,11 +120,9 @@ export class PanelIntegration {
             opUrl: opTweet?.url,
           });
 
-          // Update usage stats
           this.controller.addUsage(result.usage);
           this.controller.updateFooter();
 
-          // Record additional usage
           await browser.runtime.sendMessage({
             type: MESSAGE_TYPES.RECORD_USAGE,
             data: {
@@ -97,7 +131,6 @@ export class PanelIntegration {
             },
           });
 
-          // Cache the breakdown
           this.breakdownCache.set(tweet.id, result.breakdown);
           this.controller.cacheTranslation(tweet.id, {
             id: tweet.id,
@@ -106,14 +139,14 @@ export class PanelIntegration {
             notes: result.breakdown.notes,
           });
 
-          // Render breakdown using the shared renderer
           breakdownInner.innerHTML = '';
           breakdownInner.appendChild(renderBreakdownContent(result.breakdown));
         } catch (error) {
           breakdownInner.innerHTML = `<div class="breakdown-error">Failed to load breakdown: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
+        } finally {
+          this.breakdownsInFlight.delete(tweet.id);
         }
       } else {
-        // Use cached breakdown
         const cached = this.breakdownCache.get(tweet.id)!;
         if (breakdownInner.children.length === 0 || breakdownInner.querySelector('.breakdown-loading')) {
           breakdownInner.innerHTML = '';
@@ -123,11 +156,466 @@ export class PanelIntegration {
         article.classList.add('expanded');
       }
     } else {
-      // Collapse
       breakdownEl.classList.add('hidden');
       article.classList.remove('expanded');
     }
   }
+
+  // ============================================================
+  // PHASE 1: Navigation Boundary
+  // ============================================================
+
+  /**
+   * Entry point for navigation changes.
+   * Increments navToken, aborts in-flight work, resets state, shows loading.
+   */
+  private beginNavigation(): void {
+    // Increment navigation token to invalidate all in-flight work
+    this.navToken += 1;
+    const token = this.navToken;
+
+    console.debug('[Panel] beginNavigation', { navToken: token });
+
+    // Abort any in-flight operations
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+
+    // Stop sync loop
+    this.stopSyncLoop();
+
+    // Reset state
+    this.resetState();
+
+    // Show loading
+    this.controller.showLoading(true);
+  }
+
+  /**
+   * Waits for the thread DOM to be ready.
+   * Returns true if URL /status/{id} matches the primary DOM tweet id.
+   * Times out after 8 seconds.
+   */
+  private async gateThreadReady(targetThreadId: string | null, token: number): Promise<boolean> {
+    if (!targetThreadId) {
+      return true;
+    }
+
+    const start = Date.now();
+    const timeoutMs = 8000;
+    const pollMs = 150;
+
+    const getMainColumn = (): Element | null => {
+      return document.querySelector('main[role="main"]')
+        || document.querySelector('[role="main"]')
+        || document.querySelector('main');
+    };
+
+    const getPrimaryTweetId = (): string | null => {
+      const main = getMainColumn();
+      if (!main) return null;
+
+      // Get first article in main column (not nested)
+      const articles = main.querySelectorAll('article[data-testid="tweet"]');
+      for (const article of articles) {
+        // Skip nested tweets (quotes)
+        if (article.parentElement?.closest('article[data-testid="tweet"]')) {
+          continue;
+        }
+
+        // Find status link in this article
+        const timeLinks = Array.from(article.querySelectorAll('time'))
+          .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
+          .filter((link): link is HTMLAnchorElement => !!link);
+
+        for (const link of timeLinks) {
+          if (link.closest('article[data-testid="tweet"]') === article) {
+            const href = link.getAttribute('href') ?? '';
+            const match = href.match(/\/status\/(\d+)/);
+            if (match) return match[1];
+          }
+        }
+
+        // Fallback: any status link in the article
+        const statusLink = article.querySelector('a[href*="/status/"]');
+        if (statusLink) {
+          const href = statusLink.getAttribute('href') ?? '';
+          const match = href.match(/\/status\/(\d+)/);
+          if (match) return match[1];
+        }
+      }
+      return null;
+    };
+
+    while (Date.now() - start < timeoutMs) {
+      // Check if navigation was superseded
+      if (token !== this.navToken) {
+        console.debug('[Panel] gateThreadReady: navToken changed', { token, current: this.navToken });
+        return false;
+      }
+
+      // Check if abort was requested
+      if (this.abortController?.signal.aborted) {
+        return false;
+      }
+
+      // Check if URL still matches
+      const currentThreadId = extractThreadId(window.location.href);
+      if (currentThreadId !== targetThreadId) {
+        console.debug('[Panel] gateThreadReady: URL changed', { targetThreadId, currentThreadId });
+        return false;
+      }
+
+      // Check if primary tweet matches
+      const primaryId = getPrimaryTweetId();
+      console.debug('[Panel] gateThreadReady polling', { targetThreadId, primaryId });
+
+      if (primaryId === targetThreadId) {
+        return true;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+
+    // Timeout - show error
+    console.warn('[Panel] gateThreadReady: timeout', { targetThreadId });
+    return false;
+  }
+
+  // ============================================================
+  // PHASE 2: Sync Loop
+  // ============================================================
+
+  /**
+   * Starts the sync loop with a MutationObserver on the main column.
+   */
+  private startSyncLoop(token: number): void {
+    if (token !== this.navToken) return;
+
+    this.stopSyncLoop();
+
+    const main = document.querySelector('main[role="main"]')
+      || document.querySelector('[role="main"]')
+      || document.querySelector('main');
+
+    if (!main) {
+      console.warn('[Panel] startSyncLoop: no main column found');
+      return;
+    }
+
+    console.debug('[Panel] startSyncLoop started', { token });
+
+    // Set up MutationObserver
+    this.syncObserver = new MutationObserver(() => {
+      this.debouncedSync(token);
+    });
+
+    this.syncObserver.observe(main, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Initial sync
+    void this.sync(token);
+  }
+
+  /**
+   * Stops the sync loop.
+   */
+  private stopSyncLoop(): void {
+    if (this.syncObserver) {
+      this.syncObserver.disconnect();
+      this.syncObserver = null;
+    }
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+      this.syncDebounceTimer = null;
+    }
+  }
+
+  /**
+   * Debounced sync call.
+   */
+  private debouncedSync(token: number): void {
+    if (this.syncDebounceTimer) {
+      clearTimeout(this.syncDebounceTimer);
+    }
+    this.syncDebounceTimer = setTimeout(() => {
+      void this.sync(token);
+    }, PanelIntegration.SYNC_DEBOUNCE_MS);
+  }
+
+  /**
+   * Idempotent sync loop.
+   * Scrapes main column, diffs by id, renders skeletons, translates new tweets.
+   */
+  private async sync(token: number): Promise<void> {
+    // Check navToken at start
+    if (token !== this.navToken) return;
+
+    // Scrape main column only
+    const visible = this.scrapeMainColumnTweets();
+    const visibleIds = new Set(visible.map((t) => t.id));
+
+    // Recheck navToken after scrape
+    if (token !== this.navToken) return;
+
+    console.debug('[Panel] sync', {
+      visibleCount: visible.length,
+      currentCount: this.currentTweets.size,
+      token
+    });
+
+    // If panel just opened and no tweets found, show loading or empty
+    if (visible.length === 0) {
+      if (this.currentTweets.size === 0) {
+        // Still waiting for tweets
+        return;
+      }
+      // Tweets disappeared (navigation in progress?)
+      this.controller.showLoading(true);
+      return;
+    }
+
+    // Hide loading since we have tweets
+    this.controller.showLoading(false);
+
+    // Track if we made any changes
+    let hasChanges = false;
+
+    // Remove tweets no longer visible
+    for (const id of this.currentTweets.keys()) {
+      if (!visibleIds.has(id)) {
+        this.currentTweets.delete(id);
+        this.controller.removeTweet(id);
+        hasChanges = true;
+      }
+    }
+
+    // Add new tweets
+    const newTweets: Tweet[] = [];
+    for (const tweet of visible) {
+      if (!this.currentTweets.has(tweet.id)) {
+        this.currentTweets.set(tweet.id, tweet);
+        this.controller.renderSkeleton(tweet);
+        newTweets.push(tweet);
+        hasChanges = true;
+      }
+    }
+
+    // Reorder to match DOM
+    this.controller.reorderTweets(visible.map((t) => t.id));
+
+    // Only update tweetIndexById when tweets actually changed
+    if (hasChanges) {
+      this.controller.setTweets(visible, this.activeSourceUrl || window.location.href);
+      this.tweets = visible;
+    }
+
+    // Translate new tweets
+    for (const tweet of newTweets) {
+      void this.translateAndRender(tweet, token);
+    }
+  }
+
+  /**
+   * Gets the set of tweet IDs visible in the main column (not nested/quotes).
+   */
+  private getMainColumnTweetIds(): Set<string> {
+    const main = document.querySelector('main[role="main"]')
+      || document.querySelector('[role="main"]')
+      || document.querySelector('main');
+
+    if (!main) {
+      return new Set();
+    }
+
+    const ids = new Set<string>();
+    const articles = main.querySelectorAll('article[data-testid="tweet"]');
+
+    for (const article of articles) {
+      // Skip nested tweets (quotes)
+      if (article.parentElement?.closest('article[data-testid="tweet"]')) {
+        continue;
+      }
+
+      // Extract tweet ID from status link
+      const timeLinks = Array.from(article.querySelectorAll('time'))
+        .map((t) => t.closest('a[href*="/status/"]'))
+        .filter((l): l is HTMLAnchorElement => !!l);
+
+      for (const link of timeLinks) {
+        if (link.closest('article[data-testid="tweet"]') === article) {
+          const match = (link.getAttribute('href') ?? '').match(/\/status\/(\d+)/);
+          if (match) {
+            ids.add(match[1]);
+            break;
+          }
+        }
+      }
+    }
+
+    return ids;
+  }
+
+  /**
+   * Scrapes tweets from the main column only.
+   * Uses the original scrapeTweets() to preserve grouping metadata (for connecting lines),
+   * then filters to only tweets visible in the main column.
+   */
+  private scrapeMainColumnTweets(): Tweet[] {
+    // First, get the set of IDs visible in main column
+    const mainColumnIds = this.getMainColumnTweetIds();
+
+    if (mainColumnIds.size === 0) {
+      return [];
+    }
+
+    // Use original scraper to get rich metadata (grouping, etc.)
+    const result = scrapeTweets({
+      commentLimit: this.commentLimit,
+    });
+
+    // Filter to only tweets in main column, preserving order
+    return result.tweets.filter((tweet) => mainColumnIds.has(tweet.id));
+  }
+
+  /**
+   * Checks all rejection rules before rendering.
+   * Returns false if render should be rejected.
+   */
+  private shouldRender(tweetId: string, token: number): boolean {
+    // REQ: navToken must match
+    if (token !== this.navToken) return false;
+
+    // REQ: tweet must still be visible
+    if (!this.currentTweets.has(tweetId)) return false;
+
+    // REQ: panel must be open
+    if (!this.controller.isOpen()) return false;
+
+    // REQ: sourceUrl must match current URL
+    if (this.activeSourceUrl && window.location.href !== this.activeSourceUrl) return false;
+
+    // REQ: sourceThreadId must match current URL thread ID
+    if (this.activeThreadId) {
+      const currentThreadId = extractThreadId(window.location.href);
+      if (currentThreadId !== this.activeThreadId) return false;
+      // Note: We do NOT check primaryDomId here because when viewing a child tweet,
+      // Twitter shows parent tweets above it for context. The URL points to the child,
+      // but the first DOM tweet is the parent. The gate already verified thread readiness.
+    }
+
+    return true;
+  }
+
+  /**
+   * Translates a tweet and renders it.
+   * Cache-aware: uses cached translation if available.
+   * Visibility-checked: verifies tweet still visible, navToken, URL, and threadId match before render.
+   */
+  private async translateAndRender(tweet: Tweet, token: number): Promise<void> {
+    console.debug('[Panel] translateAndRender start', {
+      tweetId: tweet.id,
+      token,
+      navToken: this.navToken,
+      shouldRender: this.shouldRender(tweet.id, token),
+      activeThreadId: this.activeThreadId,
+      currentUrl: window.location.href,
+    });
+
+    // Check cache first
+    const cached = this.controller.getCachedTranslation(tweet.id);
+    if (cached) {
+      // Verify still valid before render
+      if (!this.shouldRender(tweet.id, token)) {
+        console.debug('[Panel] translateAndRender: cached but shouldRender=false', { tweetId: tweet.id });
+        return;
+      }
+
+      this.controller.updateTweet(tweet, cached);
+      return;
+    }
+
+    // Prevent duplicate translation requests
+    if (this.translationsInFlight.has(tweet.id)) {
+      console.debug('[Panel] translateAndRender: already in flight', { tweetId: tweet.id });
+      return;
+    }
+    this.translationsInFlight.add(tweet.id);
+
+    try {
+      if (!this.apiKey) {
+        // Try to get API key
+        const settings = (await browser.runtime.sendMessage({
+          type: MESSAGE_TYPES.GET_SETTINGS,
+        })) as { apiKey?: string; commentLimit?: number };
+
+        if (token !== this.navToken) return;
+
+        if (!settings?.apiKey) {
+          this.controller.showError('Please set your API key in the extension settings');
+          return;
+        }
+        this.apiKey = settings.apiKey;
+        this.commentLimit = settings.commentLimit;
+      }
+
+      // Translate single tweet
+      await translateQuickStreaming([tweet], this.apiKey, {
+        signal: this.abortController?.signal,
+        onTranslation: (translation) => {
+          console.debug('[Panel] onTranslation', {
+            tweetId: translation.id,
+            token,
+            navToken: this.navToken,
+            shouldRender: this.shouldRender(tweet.id, token),
+          });
+
+          // Verify all rejection rules before render
+          if (!this.shouldRender(tweet.id, token)) {
+            console.debug('[Panel] onTranslation: rejected by shouldRender', { tweetId: tweet.id });
+            return;
+          }
+
+          const cachedTranslation: CachedTranslation = {
+            id: translation.id,
+            naturalTranslation: translation.naturalTranslation,
+            segments: [],
+            notes: [],
+          };
+          this.controller.cacheTranslation(translation.id, cachedTranslation);
+          this.controller.updateTweet(tweet, cachedTranslation);
+          console.debug('[Panel] onTranslation: updateTweet called', { tweetId: tweet.id });
+        },
+        onComplete: async (usage) => {
+          this.controller.addUsage(usage);
+          this.controller.updateFooter();
+
+          await browser.runtime.sendMessage({
+            type: MESSAGE_TYPES.RECORD_USAGE,
+            data: {
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            },
+          });
+        },
+        onError: (error) => {
+          console.warn('[Panel] onError', { tweetId: tweet.id, error: error.message });
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        return;
+      }
+      console.warn('[Panel] translateAndRender error', error);
+    } finally {
+      this.translationsInFlight.delete(tweet.id);
+    }
+  }
+
+  // ============================================================
+  // URL Change Handler (Entry Point)
+  // ============================================================
 
   private handleUrlChange(newUrl: string): void {
     if (!this.controller.isOpen()) {
@@ -139,20 +627,73 @@ export class PanelIntegration {
       threadId: extractThreadId(newUrl),
     });
 
-    if (isTwitterThreadUrl(newUrl)) {
-      // Clear and re-translate
-      this.controller.clearTweets();
-      this.controller.clearCache();
-      this.controller.resetUsage();
-      this.breakdownCache.clear();
-      this.tweets = [];
-      void this.scrapeAndTranslate();
-    } else {
-      // Show empty state for non-thread pages
+    // Start navigation flow
+    this.beginNavigation();
+    const token = this.navToken;
+
+    if (!isTwitterThreadUrl(newUrl)) {
+      this.controller.showLoading(false);
       this.controller.showEmptyState();
       this.controller.setLoadMoreEnabled(false);
+      return;
     }
+
+    const targetThreadId = extractThreadId(newUrl);
+    this.activeSourceUrl = newUrl;
+    this.activeThreadId = targetThreadId;
+
+    // Gate on thread readiness, then start sync loop
+    void this.gateAndSync(targetThreadId, token);
   }
+
+  /**
+   * Gates on thread readiness then starts sync loop.
+   */
+  private async gateAndSync(targetThreadId: string | null, token: number): Promise<void> {
+    // Get API key first
+    try {
+      const settings = (await browser.runtime.sendMessage({
+        type: MESSAGE_TYPES.GET_SETTINGS,
+      })) as { apiKey?: string; commentLimit?: number };
+
+      if (token !== this.navToken) return;
+
+      if (!settings?.apiKey) {
+        this.controller.showLoading(false);
+        this.controller.showError('Please set your API key in the extension settings');
+        this.controller.setLoadMoreEnabled(false);
+        return;
+      }
+
+      this.apiKey = settings.apiKey;
+      this.commentLimit = settings.commentLimit;
+    } catch {
+      if (token !== this.navToken) return;
+      this.controller.showLoading(false);
+      this.controller.showError('Failed to load settings');
+      return;
+    }
+
+    // Wait for thread to be ready
+    const ready = await this.gateThreadReady(targetThreadId, token);
+
+    if (token !== this.navToken) return;
+
+    if (!ready) {
+      this.controller.showLoading(false);
+      this.controller.showError('Unable to detect thread. Please refresh the page.');
+      this.controller.setLoadMoreEnabled(false);
+      return;
+    }
+
+    // Start sync loop
+    this.controller.setLoadMoreEnabled(true);
+    this.startSyncLoop(token);
+  }
+
+  // ============================================================
+  // Public API
+  // ============================================================
 
   /**
    * Toggles the panel open/closed.
@@ -164,15 +705,15 @@ export class PanelIntegration {
 
     if (isOpen) {
       this.urlWatcher.start();
-      // Check if we're on a thread page
       if (isTwitterThreadUrl(window.location.href)) {
-        void this.scrapeAndTranslate();
+        this.handleUrlChange(window.location.href);
       } else {
         this.controller.showEmptyState();
         this.controller.setLoadMoreEnabled(false);
       }
     } else if (wasOpen) {
       this.urlWatcher.stop();
+      this.stopSyncLoop();
       this.resetState();
     }
   }
@@ -203,227 +744,38 @@ export class PanelIntegration {
   }
 
   /**
-   * Scrapes the current page and translates content.
-   */
-  private async scrapeAndTranslate(): Promise<void> {
-    this.controller.showLoading(true);
-
-    try {
-      const targetUrl = window.location.href;
-      const targetThreadId = extractThreadId(targetUrl);
-
-      console.debug('[Panel] Starting scrape', {
-        targetUrl,
-        targetThreadId,
-      });
-
-      // Get settings
-      const settings = (await browser.runtime.sendMessage({
-        type: MESSAGE_TYPES.GET_SETTINGS,
-      })) as { apiKey?: string; commentLimit?: number };
-
-      if (!settings?.apiKey) {
-        this.controller.showLoading(false);
-        this.controller.showError('Please set your API key in the extension settings');
-        this.controller.setLoadMoreEnabled(false);
-        return;
-      }
-
-      this.apiKey = settings.apiKey;
-      this.commentLimit = settings.commentLimit;
-
-      const getPrimaryStatusId = (article: Element | null): string | null => {
-        if (!article) return null;
-        const timeLinks = Array.from(article.querySelectorAll('time'))
-          .map((timeEl) => timeEl.closest('a[href*="/status/"]'))
-          .filter((link): link is HTMLAnchorElement => !!link);
-
-        for (const link of timeLinks) {
-          if (link.closest('article[data-testid="tweet"]') === article) {
-            const href = link.getAttribute('href') ?? '';
-            const match = href.match(/\/status\/(\d+)/);
-            return match ? match[1] : null;
-          }
-        }
-
-        const links = Array.from(article.querySelectorAll('a[href*="/status/"]'))
-          .filter((link): link is HTMLAnchorElement => link instanceof HTMLAnchorElement)
-          .filter((link) => link.closest('article[data-testid="tweet"]') === article);
-        const href = links[0]?.getAttribute('href') ?? '';
-        const match = href.match(/\/status\/(\d+)/);
-        return match ? match[1] : null;
-      };
-
-      const getThreadIdsInDom = (limit = 12): string[] => {
-        const items = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
-          .filter((article) => !article.parentElement?.closest('article[data-testid="tweet"]'));
-        const ids: string[] = [];
-        for (const article of items) {
-          const id = getPrimaryStatusId(article);
-          if (id) {
-            ids.push(id);
-            if (ids.length >= limit) break;
-          }
-        }
-        return ids;
-      };
-
-      const ensureThreadReady = async (): Promise<boolean> => {
-        if (!targetThreadId) {
-          return true;
-        }
-
-        const start = Date.now();
-        const timeoutMs = 8000;
-        const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-        const getFirstTweetId = (): string | null => {
-          const first = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
-            .find((article) => !article.parentElement?.closest('article[data-testid="tweet"]')) ?? null;
-          return getPrimaryStatusId(first);
-        };
-
-        while (Date.now() - start < timeoutMs) {
-          if (extractThreadId(window.location.href) !== targetThreadId) {
-            console.debug('[Panel] Thread changed during wait', {
-              currentUrl: window.location.href,
-              targetThreadId,
-            });
-            return false;
-          }
-          const firstId = getFirstTweetId();
-          const tweetCount = document.querySelectorAll('article[data-testid="tweet"]').length;
-          const domIds = getThreadIdsInDom();
-          console.debug('[Panel] Wait for thread DOM', {
-            targetThreadId,
-            firstId,
-            tweetCount,
-            domIds: domIds.slice(0, 6),
-          });
-          // Only match when the FIRST tweet is the target thread (not just present somewhere in DOM)
-          if (firstId === targetThreadId) {
-            return true;
-          }
-          await sleep(200);
-        }
-
-        return false;
-      };
-
-      let tweets: Tweet[] = [];
-      let matchedThread = false;
-
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const ready = await ensureThreadReady();
-        if (!ready) {
-          break;
-        }
-
-        const result = scrapeTweets({
-          commentLimit: settings.commentLimit,
-        });
-
-        tweets = result.tweets;
-        console.debug('[Panel] Scrape attempt', {
-          attempt,
-          targetThreadId,
-          firstScrapedId: tweets[0]?.id,
-          count: tweets.length,
-          scrapedIds: tweets.slice(0, 6).map((tweet) => tweet.id),
-          scrapedUrls: tweets.slice(0, 3).map((tweet) => tweet.url),
-          firstText: tweets[0]?.text?.slice(0, 120),
-        });
-        // Only match when the FIRST scraped tweet is the target thread
-        const hasTarget = !targetThreadId
-          || tweets[0]?.id === targetThreadId
-          || (tweets[0]?.url ?? '').includes(`/status/${targetThreadId}`);
-
-        if (hasTarget) {
-          matchedThread = true;
-          break;
-        }
-
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-
-      if (!matchedThread) {
-        console.warn('[Panel] Target thread not detected in scrape, using current thread anyway', {
-          targetThreadId,
-          firstScrapedId: tweets[0]?.id,
-        });
-      }
-
-      if (tweets.length === 0) {
-        this.controller.showLoading(false);
-        this.controller.showEmptyState();
-        this.controller.setLoadMoreEnabled(false);
-        return;
-      }
-
-      this.tweets = tweets;
-      this.controller.setTweets(tweets, targetUrl);
-      this.controller.setLoadMoreEnabled(true);
-
-      // Translate the tweets
-      await translateQuickStreaming(tweets, this.apiKey, {
-        onTranslation: (translation) => {
-          const tweet = tweets.find((t) => t.id === translation.id);
-          if (tweet) {
-            const cached: CachedTranslation = {
-              id: translation.id,
-              naturalTranslation: translation.naturalTranslation,
-              segments: [],
-              notes: [],
-            };
-            this.controller.cacheTranslation(translation.id, cached);
-            this.controller.renderTweet(tweet, cached);
-          }
-          // Hide loading after first result
-          this.controller.showLoading(false);
-        },
-        onComplete: async (usage) => {
-          this.controller.showLoading(false);
-          this.controller.addUsage(usage);
-          this.controller.updateFooter();
-
-          // Record usage
-          await browser.runtime.sendMessage({
-            type: MESSAGE_TYPES.RECORD_USAGE,
-            data: {
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-            },
-          });
-
-        },
-        onError: (error) => {
-          this.controller.showLoading(false);
-          this.controller.showError(error.message);
-        },
-      });
-    } catch (error) {
-      this.controller.showLoading(false);
-      this.controller.showError(error instanceof Error ? error.message : 'Translation failed');
-      this.controller.setLoadMoreEnabled(false);
-    }
-  }
-
-  /**
    * Destroys the integration and cleans up.
    */
   destroy(): void {
+    this.stopSyncLoop();
     this.urlWatcher.stop();
     this.controller.destroy();
   }
 
   private resetState(): void {
-    this.controller.resetState();
-    this.controller.setLoadMoreEnabled(false);
+    this.abortController?.abort();
+    this.abortController = null;
+    this.activeSourceUrl = null;
+    this.activeThreadId = null;
+    this.breakdownsInFlight.clear();
     this.breakdownCache.clear();
     this.tweets = [];
+    this.currentTweets.clear();
+    this.translationsInFlight.clear();
+    this.controller.resetState();
+    this.controller.setLoadMoreEnabled(false);
   }
 
+  /**
+   * Manual load more (optional feature).
+   */
   private async loadMoreReplies(): Promise<void> {
     if (!this.controller.isOpen()) {
+      return;
+    }
+
+    if (window.location.href !== this.activeSourceUrl) {
+      this.handleUrlChange(window.location.href);
       return;
     }
 
@@ -436,6 +788,8 @@ export class PanelIntegration {
       this.controller.showError('Please set your API key in the extension settings');
       return;
     }
+
+    const token = this.navToken;
 
     this.controller.setLoadMoreEnabled(false);
     this.controller.showLoading(true);
@@ -454,74 +808,20 @@ export class PanelIntegration {
         },
       })) as { success: boolean; tweets?: Tweet[]; error?: string };
 
+      if (token !== this.navToken) return;
+
       if (!response?.success || !response.tweets) {
         this.controller.showError(response?.error || 'Failed to load more replies');
         return;
       }
 
-      const newTweets = response.tweets.filter((tweet) => !knownIds.includes(tweet.id));
-      if (newTweets.length === 0) {
-        return;
-      }
-
-      this.tweets = [...this.tweets, ...newTweets];
-      this.controller.setTweets(this.tweets, window.location.href);
-
-      const cachedTranslations: CachedTranslation[] = [];
-      const toTranslate: Tweet[] = [];
-
-      for (const tweet of newTweets) {
-        const cached = this.controller.getCachedTranslation(tweet.id);
-        if (cached) {
-          cachedTranslations.push(cached);
-        } else {
-          toTranslate.push(tweet);
-        }
-      }
-
-      cachedTranslations.forEach((translation) => {
-        const tweet = newTweets.find((t) => t.id === translation.id);
-        if (tweet) {
-          this.controller.renderTweet(tweet, translation);
-        }
-      });
-
-      if (toTranslate.length === 0) {
-        return;
-      }
-
-      await translateQuickStreaming(toTranslate, this.apiKey, {
-        onTranslation: (translation) => {
-          const tweet = toTranslate.find((t) => t.id === translation.id);
-          if (!tweet) return;
-          const cached: CachedTranslation = {
-            id: translation.id,
-            naturalTranslation: translation.naturalTranslation,
-            segments: [],
-            notes: [],
-          };
-          this.controller.cacheTranslation(translation.id, cached);
-          this.controller.renderTweet(tweet, cached);
-        },
-        onComplete: async (usage) => {
-          this.controller.addUsage(usage);
-          this.controller.updateFooter();
-          await browser.runtime.sendMessage({
-            type: MESSAGE_TYPES.RECORD_USAGE,
-            data: {
-              inputTokens: usage.inputTokens,
-              outputTokens: usage.outputTokens,
-            },
-          });
-        },
-        onError: (error) => {
-          this.controller.showError(error.message);
-        },
-      });
+      // Trigger a sync to pick up any new tweets
+      void this.sync(token);
     } finally {
-      this.controller.showLoading(false);
-      this.controller.setLoadMoreEnabled(true);
+      if (token === this.navToken) {
+        this.controller.showLoading(false);
+        this.controller.setLoadMoreEnabled(true);
+      }
     }
   }
 }
-

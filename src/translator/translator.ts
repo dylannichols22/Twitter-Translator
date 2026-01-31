@@ -270,6 +270,7 @@ export interface QuickStreamCallbacks {
   onTranslation: (translation: QuickTranslation) => void;
   onComplete: (usage: UsageStats) => void;
   onError: (error: Error) => void;
+  signal?: AbortSignal; // REQ-1.3: AbortSignal support
 }
 
 interface QuickTranslationApiResponse {
@@ -290,6 +291,13 @@ export async function translateQuickStreaming(
   apiKey: string,
   callbacks: QuickStreamCallbacks
 ): Promise<void> {
+  const { signal } = callbacks;
+
+  // REQ-1.4: Check abort before starting
+  if (signal?.aborted) {
+    return;
+  }
+
   if (!apiKey) {
     callbacks.onError(new Error('API key is required'));
     return;
@@ -317,17 +325,27 @@ export async function translateQuickStreaming(
       messages: [{ role: 'user', content: userPrompt }],
     });
 
+    // REQ-1.3: Handle abort signal - abort the stream controller
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        stream.controller.abort();
+      }, { once: true });
+    }
+
     let fullText = '';
     const seenIds = new Set<string>();
 
     stream.on('text', (text) => {
+      // REQ-1.4: Check abort at each await boundary
+      if (signal?.aborted) return;
+
       fullText += text;
 
       const jsonText = extractJson(fullText);
       const translations = extractQuickTranslations(jsonText);
 
       for (const translation of translations) {
-        if (!seenIds.has(translation.id)) {
+        if (!seenIds.has(translation.id) && !signal?.aborted) {
           seenIds.add(translation.id);
           callbacks.onTranslation(translation);
         }
@@ -336,18 +354,35 @@ export async function translateQuickStreaming(
 
     const finalMessage = await stream.finalMessage();
 
+    // REQ-1.4: Check abort before calling onComplete
+    if (signal?.aborted) return;
+
     callbacks.onComplete({
       inputTokens: finalMessage.usage.input_tokens,
       outputTokens: finalMessage.usage.output_tokens,
     });
-  } catch {
+  } catch (error) {
+    // REQ-1.4: Ignore AbortError
+    if (error instanceof Error && error.name === 'AbortError') {
+      return;
+    }
+    if (signal?.aborted) {
+      return;
+    }
+
     try {
+      // REQ-1.4: Check abort before fallback
+      if (signal?.aborted) return;
+
       const response = await client.messages.create({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2048,
         system: QUICK_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
       });
+
+      // REQ-1.4: Check abort after await
+      if (signal?.aborted) return;
 
       const textContent = response.content.find((c) => c.type === 'text');
       if (!textContent || textContent.type !== 'text') {
@@ -357,12 +392,20 @@ export async function translateQuickStreaming(
       const jsonText = extractJson(textContent.text);
       const translations = parseQuickTranslationResponse(jsonText);
 
-      translations.forEach((translation) => callbacks.onTranslation(translation));
-      callbacks.onComplete({
-        inputTokens: response.usage.input_tokens,
-        outputTokens: response.usage.output_tokens,
+      translations.forEach((translation) => {
+        if (!signal?.aborted) {
+          callbacks.onTranslation(translation);
+        }
       });
+
+      if (!signal?.aborted) {
+        callbacks.onComplete({
+          inputTokens: response.usage.input_tokens,
+          outputTokens: response.usage.output_tokens,
+        });
+      }
     } catch (fallbackError) {
+      if (signal?.aborted) return;
       callbacks.onError(fallbackError instanceof Error ? fallbackError : new Error('Translation failed'));
     }
   }

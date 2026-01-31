@@ -211,10 +211,24 @@ export class PanelController {
 
   /**
    * Renders a single tweet with its translation.
+   * REQ-4.1: Idempotent - checks knownTweetIds BEFORE rendering.
    */
   renderTweet(tweet: Tweet, translation: CachedTranslation | QuickTranslation): void {
+    // REQ-4.1: Check BEFORE rendering to prevent duplicates
+    if (this.knownTweetIds.has(tweet.id)) {
+      return; // Already rendered - skip
+    }
+    // Mark BEFORE DOM manipulation
+    this.knownTweetIds.add(tweet.id);
+
     const container = this.getContentContainer();
     if (!container) return;
+
+    // REQ-4.2: Check for existing DOM element as additional safeguard
+    const existingEl = container.querySelector(`.tweet-card[data-tweet-id="${tweet.id}"]`);
+    if (existingEl) {
+      return; // Already in DOM - skip
+    }
 
     const onToggleBreakdown = this.breakdownToggleCallback
       ? (article: HTMLElement, breakdown: HTMLElement) => {
@@ -239,7 +253,6 @@ export class PanelController {
         container.appendChild(element);
       }
     }
-    this.knownTweetIds.add(tweet.id);
   }
 
   /**
@@ -292,6 +305,112 @@ export class PanelController {
    */
   getKnownTweetIds(): Set<string> {
     return new Set(this.knownTweetIds);
+  }
+
+  /**
+   * Renders a skeleton loading state for a tweet.
+   */
+  renderSkeleton(tweet: Tweet): void {
+    if (this.knownTweetIds.has(tweet.id)) {
+      return;
+    }
+    this.knownTweetIds.add(tweet.id);
+
+    const container = this.getContentContainer();
+    if (!container) return;
+
+    const existingEl = container.querySelector(`.tweet-card[data-tweet-id="${tweet.id}"]`);
+    if (existingEl) return;
+
+    const skeleton = document.createElement('article');
+    skeleton.className = 'tweet-card tweet-skeleton';
+    skeleton.dataset.tweetId = tweet.id;
+    skeleton.innerHTML = `
+      <div class="tweet-header">
+        <span class="tweet-author">${tweet.author || 'Loading...'}</span>
+      </div>
+      <div class="tweet-original">${tweet.text || ''}</div>
+      <div class="tweet-translation skeleton-pulse">Translating...</div>
+    `;
+
+    const targetIndex = this.tweetIndexById.get(tweet.id);
+    if (typeof targetIndex !== 'number') {
+      container.appendChild(skeleton);
+    } else {
+      const cards = Array.from(container.querySelectorAll<HTMLElement>('.tweet-card'));
+      const next = cards.find((card) => {
+        const id = card.dataset.tweetId ?? '';
+        const index = this.tweetIndexById.get(id);
+        return typeof index === 'number' && index > targetIndex;
+      });
+      if (next) {
+        container.insertBefore(skeleton, next);
+      } else {
+        container.appendChild(skeleton);
+      }
+    }
+  }
+
+  /**
+   * Removes a tweet from the panel by ID.
+   */
+  removeTweet(id: string): void {
+    this.knownTweetIds.delete(id);
+    const container = this.getContentContainer();
+    if (!container) return;
+    const el = container.querySelector(`.tweet-card[data-tweet-id="${id}"]`);
+    if (el) {
+      el.remove();
+    }
+  }
+
+  /**
+   * Reorders tweets in the panel to match the given ID order.
+   */
+  reorderTweets(ids: string[]): void {
+    const container = this.getContentContainer();
+    if (!container) return;
+
+    const idToIndex = new Map(ids.map((id, index) => [id, index]));
+    const cards = Array.from(container.querySelectorAll<HTMLElement>('.tweet-card'));
+
+    cards.sort((a, b) => {
+      const aId = a.dataset.tweetId ?? '';
+      const bId = b.dataset.tweetId ?? '';
+      const aIndex = idToIndex.get(aId) ?? Number.MAX_SAFE_INTEGER;
+      const bIndex = idToIndex.get(bId) ?? Number.MAX_SAFE_INTEGER;
+      return aIndex - bIndex;
+    });
+
+    for (const card of cards) {
+      container.appendChild(card);
+    }
+  }
+
+  /**
+   * Updates a skeleton with the full translation.
+   */
+  updateTweet(tweet: Tweet, translation: CachedTranslation | QuickTranslation): void {
+    const container = this.getContentContainer();
+    if (!container) return;
+
+    const existingEl = container.querySelector(`.tweet-card[data-tweet-id="${tweet.id}"]`);
+    if (!existingEl) {
+      // Not in DOM yet, render fresh
+      this.knownTweetIds.delete(tweet.id); // Allow renderTweet to work
+      this.renderTweet(tweet, translation);
+      return;
+    }
+
+    // Replace skeleton with full tweet
+    const onToggleBreakdown = this.breakdownToggleCallback
+      ? (article: HTMLElement, breakdown: HTMLElement) => {
+          this.breakdownToggleCallback!(article, breakdown, tweet);
+        }
+      : undefined;
+
+    const element = renderTweetCard(tweet, translation, onToggleBreakdown);
+    existingEl.replaceWith(element);
   }
 
   /**
