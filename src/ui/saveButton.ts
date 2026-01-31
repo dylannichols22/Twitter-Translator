@@ -26,6 +26,32 @@ export interface PostData {
 
 export type SaveCallback = (success: boolean, message: string) => void;
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function createBookmarkIcon(size: number): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('width', String(size));
+  svg.setAttribute('height', String(size));
+  svg.setAttribute('fill', 'currentColor');
+
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z');
+  svg.appendChild(path);
+
+  return svg;
+}
+
+function setButtonContent(button: HTMLElement, label: string | null, size: number): void {
+  while (button.firstChild) {
+    button.removeChild(button.firstChild);
+  }
+  button.appendChild(createBookmarkIcon(size));
+  if (label) {
+    button.appendChild(document.createTextNode(` ${label}`));
+  }
+}
+
 async function checkIsSaved(chinese: string, type: SavedItemType): Promise<boolean> {
   try {
     const response = await browser.runtime.sendMessage({
@@ -63,9 +89,7 @@ export function createSegmentSaveIcon(
   btn.className = 'save-icon save-segment-icon';
   btn.type = 'button';
   btn.title = 'Save word';
-  btn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-    <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-  </svg>`;
+  setButtonContent(btn, null, 16);
 
   let isSaved = false;
 
@@ -112,9 +136,7 @@ export function createSentenceSaveButton(
   const btn = document.createElement('button');
   btn.className = 'save-btn save-sentence-btn';
   btn.type = 'button';
-  btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-    <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-  </svg> Save`;
+  setButtonContent(btn, 'Save', 14);
 
   const fullChinese = sentence.segments.map((s) => s.chinese).join('');
   let isSaved = false;
@@ -123,7 +145,7 @@ export function createSentenceSaveButton(
     isSaved = saved;
     if (saved) {
       btn.classList.add('saved');
-      btn.textContent = 'Saved';
+      setButtonContent(btn, 'Saved', 14);
     }
   });
 
@@ -152,7 +174,7 @@ export function createSentenceSaveButton(
     if (result.success) {
       isSaved = true;
       btn.classList.add('saved');
-      btn.textContent = 'Saved';
+      setButtonContent(btn, 'Saved', 14);
     }
     onSave?.(result.success, result.message);
   });
@@ -167,9 +189,7 @@ export function createPostSaveButton(
   const btn = document.createElement('button');
   btn.className = 'tweet-action-btn save-btn save-post-btn';
   btn.type = 'button';
-  btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-    <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-  </svg> Save Post`;
+  setButtonContent(btn, 'Save Post', 14);
 
   const fullChinese = post.segments.map((s) => s.chinese).join('');
   let isSaved = false;
@@ -178,9 +198,7 @@ export function createPostSaveButton(
     isSaved = saved;
     if (saved) {
       btn.classList.add('saved');
-      btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-    <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-  </svg> Saved`;
+      setButtonContent(btn, 'Saved', 14);
     }
   });
 
@@ -211,9 +229,7 @@ export function createPostSaveButton(
     if (result.success) {
       isSaved = true;
       btn.classList.add('saved');
-      btn.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-    <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/>
-  </svg> Saved`;
+      setButtonContent(btn, 'Saved', 14);
     }
     onSave?.(result.success, result.message);
   });

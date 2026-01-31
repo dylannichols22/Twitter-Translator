@@ -1,4 +1,5 @@
 import { MESSAGE_TYPES } from '../messages';
+import { clearElement } from './dom';
 import type { SavedItem, SavedItemType } from '../saved';
 
 class SavedPageController {
@@ -108,7 +109,7 @@ class SavedPageController {
     }
 
     if (filtered.length === 0) {
-      if (this.cardsContainer) this.cardsContainer.innerHTML = '';
+      if (this.cardsContainer) clearElement(this.cardsContainer);
       this.emptyState?.classList.remove('hidden');
       return;
     }
@@ -116,7 +117,7 @@ class SavedPageController {
     this.emptyState?.classList.add('hidden');
 
     if (this.cardsContainer) {
-      this.cardsContainer.innerHTML = '';
+      clearElement(this.cardsContainer);
       filtered.forEach((item) => {
         const card = this.createFlashcard(item);
         this.cardsContainer!.appendChild(card);
@@ -143,9 +144,15 @@ class SavedPageController {
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'flashcard-delete';
-    deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-      <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-    </svg>`;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('width', '16');
+    svg.setAttribute('height', '16');
+    svg.setAttribute('fill', 'currentColor');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z');
+    svg.appendChild(path);
+    deleteBtn.appendChild(svg);
     deleteBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       this.deleteItem(item.id);

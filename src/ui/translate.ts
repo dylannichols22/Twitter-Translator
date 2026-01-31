@@ -12,6 +12,7 @@ import {
   renderBreakdownContent,
 } from './breakdown';
 import { createPostSaveButton } from './saveButton';
+import { clearElement, setText } from './dom';
 
 export { renderSegmentTable, renderNotes, groupSegmentsForTables };
 
@@ -177,6 +178,7 @@ export class TranslateViewController {
   private loadingEl: HTMLElement | null;
   private errorEl: HTMLElement | null;
   private estimatedCostEl: HTMLElement | null;
+  private usageTodayEl: HTMLElement | null;
   private tweets: Tweet[] = [];
   private sourceUrl = '';
   private apiKey = '';
@@ -199,8 +201,10 @@ export class TranslateViewController {
     this.loadingEl = document.getElementById('loading');
     this.errorEl = document.getElementById('error-message');
     this.estimatedCostEl = document.getElementById('estimated-cost');
+    this.usageTodayEl = document.getElementById('usage-today');
 
     this.initPromise = this.loadInitialData();
+    void this.loadUsageSummary();
   }
 
   private async loadInitialData(): Promise<void> {
@@ -294,6 +298,34 @@ export class TranslateViewController {
     }
   }
 
+  private renderUsageSummary(inputTokens: number, outputTokens: number, count: number): void {
+    if (!this.usageTodayEl) return;
+    const totalTokens = inputTokens + outputTokens;
+    const avgTokens = count > 0 ? Math.round(totalTokens / count) : 0;
+    const base = `Today: ${totalTokens.toLocaleString()} tokens`;
+    const avg = count > 0 ? ` | Avg: ${avgTokens.toLocaleString()} tokens/request` : '';
+    this.usageTodayEl.textContent = `${base}${avg}`;
+  }
+
+  private async loadUsageSummary(): Promise<void> {
+    if (!this.usageTodayEl || typeof browser === 'undefined') return;
+    try {
+      const response = (await browser.runtime.sendMessage({
+        type: MESSAGE_TYPES.GET_USAGE_STATS,
+      })) as { today?: { inputTokens: number; outputTokens: number; count: number } } | undefined;
+
+      const today = response?.today;
+      if (!today) {
+        this.renderUsageSummary(0, 0, 0);
+        return;
+      }
+
+      this.renderUsageSummary(today.inputTokens, today.outputTokens, today.count);
+    } catch (error) {
+      console.error('Failed to load usage stats:', error);
+    }
+  }
+
   private renderQuickTweet(tweet: Tweet, translation: QuickTranslation): HTMLElement {
     return renderTweet(tweet, translation, (article, breakdown) => {
       void this.toggleBreakdown(article, tweet, breakdown);
@@ -360,13 +392,21 @@ export class TranslateViewController {
 
       if (!this.breakdownCache.has(tweet.id)) {
         if (!this.apiKey) {
-          breakdownInner.innerHTML = '<div class="breakdown-error">API key is required for breakdowns</div>';
+          clearElement(breakdownInner);
+          const error = document.createElement('div');
+          error.className = 'breakdown-error';
+          setText(error, 'API key is required for breakdowns');
+          breakdownInner.appendChild(error);
           breakdownEl.classList.remove('hidden');
           article.classList.add('expanded');
           return;
         }
         // Show loading state
-        breakdownInner.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
+        clearElement(breakdownInner);
+        const loading = document.createElement('div');
+        loading.className = 'breakdown-loading';
+        setText(loading, 'Loading breakdown...');
+        breakdownInner.appendChild(loading);
         breakdownEl.classList.remove('hidden');
         article.classList.add('expanded');
 
@@ -391,6 +431,7 @@ export class TranslateViewController {
               outputTokens: result.usage.outputTokens,
             },
           });
+          await this.loadUsageSummary();
 
           // Cache the breakdown
           this.breakdownCache.set(tweet.id, result.breakdown);
@@ -402,15 +443,21 @@ export class TranslateViewController {
           });
 
           // Render breakdown
-          breakdownInner.innerHTML = '';
+          clearElement(breakdownInner);
           breakdownInner.appendChild(renderBreakdownContent(result.breakdown));
         } catch (error) {
-          breakdownInner.innerHTML = `<div class="breakdown-error">Failed to load breakdown: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
+          clearElement(breakdownInner);
+          const errorEl = document.createElement('div');
+          errorEl.className = 'breakdown-error';
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          setText(errorEl, `Failed to load breakdown: ${message}`);
+          breakdownInner.appendChild(errorEl);
         }
       } else {
         // Use cached breakdown
         const cached = this.breakdownCache.get(tweet.id)!;
         if (breakdownInner.children.length === 0) {
+          clearElement(breakdownInner);
           breakdownInner.appendChild(renderBreakdownContent(cached));
         }
         breakdownEl.classList.remove('hidden');
@@ -454,7 +501,9 @@ export class TranslateViewController {
         translations: TranslatedTweet[];
         usage: UsageStats;
       };
-      this.tweetsContainer.innerHTML = '';
+      if (this.tweetsContainer) {
+        clearElement(this.tweetsContainer);
+      }
       this.cachedTranslations = [];
       this.cachedTranslationById.clear();
       const byId = new Map(cachedResult.translations.map((t) => [t.id, t]));
@@ -489,7 +538,7 @@ export class TranslateViewController {
 
     // Clear container for streaming results
     if (this.tweetsContainer) {
-      this.tweetsContainer.innerHTML = '';
+      clearElement(this.tweetsContainer);
     }
 
     this.totalUsage = { inputTokens: 0, outputTokens: 0 };
@@ -527,6 +576,7 @@ export class TranslateViewController {
             outputTokens: usage.outputTokens,
           },
         });
+        await this.loadUsageSummary();
 
         await browser.runtime.sendMessage({
           type: MESSAGE_TYPES.CACHE_TRANSLATION,
@@ -609,6 +659,7 @@ export class TranslateViewController {
             outputTokens: usage.outputTokens,
           },
         });
+        await this.loadUsageSummary();
 
         await browser.runtime.sendMessage({
           type: MESSAGE_TYPES.CACHE_TRANSLATION,

@@ -123,6 +123,26 @@ describe('Cost Module', () => {
       expect(allTimeTotal).toBeCloseTo(0.06, 4);
     });
 
+    it('returns today usage totals and count', () => {
+      vi.setSystemTime(new Date('2024-01-15T10:00:00Z'));
+
+      tracker.recordUsage(100, 200, 0.01);
+      tracker.recordUsage(50, 75, 0.005);
+      tracker['entries'].push({
+        inputTokens: 500,
+        outputTokens: 1000,
+        cost: 0.05,
+        timestamp: '2024-01-14T23:59:59Z',
+      });
+
+      const today = tracker.getTodayUsage();
+
+      expect(today.inputTokens).toBe(150);
+      expect(today.outputTokens).toBe(275);
+      expect(today.cost).toBeCloseTo(0.015, 6);
+      expect(today.count).toBe(2);
+    });
+
     it('returns zero when no entries', () => {
       expect(tracker.getThisWeekTotal()).toBe(0);
       expect(tracker.getThisMonthTotal()).toBe(0);

@@ -3,6 +3,8 @@
  * Renders as a right-side drawer overlaying Twitter content.
  */
 
+import { clearElement } from './dom';
+
 let panelInstance: HTMLElement | null = null;
 let panelOpen = false;
 
@@ -192,7 +194,7 @@ export class SidePanel {
   setContent(content: HTMLElement | DocumentFragment): void {
     const container = this.getContentContainer();
     if (container) {
-      container.innerHTML = '';
+      clearElement(container);
       container.appendChild(content);
     }
   }
@@ -241,7 +243,7 @@ export class SidePanel {
     const container = this.getContentContainer();
     if (!container) return;
 
-    container.innerHTML = '';
+    clearElement(container);
 
     const empty = document.createElement('div');
     empty.className = 'panel-empty';
@@ -274,7 +276,7 @@ export class SidePanel {
     if (typeof content === 'string') {
       usage.textContent = content;
     } else {
-      usage.innerHTML = '';
+      clearElement(usage);
       usage.appendChild(content);
     }
   }

@@ -283,6 +283,7 @@ describe('Translation View', () => {
         </div>
         <div id="error-message"></div>
         <div id="estimated-cost"></div>
+        <div id="usage-today"></div>
       `;
 
       Object.defineProperty(window, 'location', {
@@ -386,6 +387,23 @@ describe('Translation View', () => {
 
       const estimated = document.getElementById('estimated-cost');
       expect(estimated?.textContent).toContain('Estimated cost:');
+    });
+
+    it('shows today usage summary when available', async () => {
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_USAGE_STATS') {
+          return { today: { inputTokens: 100, outputTokens: 50, cost: 0.01, count: 2 } };
+        }
+        return null;
+      });
+
+      new TranslateViewController();
+
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      const usage = document.getElementById('usage-today');
+      expect(usage?.textContent).toContain('Today: 150 tokens');
+      expect(usage?.textContent).toContain('Avg: 75 tokens/request');
     });
 
     it('shows error when API key is missing', async () => {

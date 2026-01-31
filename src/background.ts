@@ -146,6 +146,15 @@ export async function handleMessage(
       };
     }
 
+    case MESSAGE_TYPES.GET_USAGE_STATS: {
+      if (!costTracker) {
+        await initCostTracker();
+      }
+      return {
+        today: costTracker.getTodayUsage(),
+      };
+    }
+
     case MESSAGE_TYPES.RECORD_USAGE: {
       const usage = typedMessage.data as {
         inputTokens: number;

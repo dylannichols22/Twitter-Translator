@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, cpSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const target = process.argv[2] || 'v2';
@@ -12,3 +12,12 @@ if (!existsSync(source)) {
 
 copyFileSync(source, dest);
 console.log(`Copied ${source} -> ${dest}`);
+
+const iconsSource = resolve('assets', 'icons');
+const iconsDest = resolve('dist', 'assets', 'icons');
+
+if (existsSync(iconsSource)) {
+  mkdirSync(iconsDest, { recursive: true });
+  cpSync(iconsSource, iconsDest, { recursive: true });
+  console.log(`Copied ${iconsSource} -> ${iconsDest}`);
+}

@@ -8,6 +8,7 @@ import { injectPanelStyles, removePanelStyles } from './panel.css';
 import { renderTweet as renderTweetCard } from './translate';
 import type { Tweet } from '../scraper';
 import type { UsageStats, QuickTranslation } from '../translator';
+import { clearElement } from './dom';
 
 export interface CachedTranslation {
   id: string;
@@ -101,7 +102,7 @@ export class PanelController {
     this.tweetIndexById.clear();
     const content = this.panel.getContentContainer();
     if (content) {
-      content.innerHTML = '';
+      clearElement(content);
     }
   }
 
@@ -281,7 +282,7 @@ export class PanelController {
     const container = this.getContentContainer();
     if (!container) return;
 
-    container.innerHTML = '';
+    clearElement(container);
     this.knownTweetIds.clear();
     this.tweetIndexById = new Map(tweets.map((tweet, index) => [tweet.id, index]));
 
@@ -344,13 +345,24 @@ export class PanelController {
     const skeleton = document.createElement('article');
     skeleton.className = 'tweet-card tweet-skeleton';
     skeleton.dataset.tweetId = tweet.id;
-    skeleton.innerHTML = `
-      <div class="tweet-header">
-        <span class="tweet-author">${tweet.author || 'Loading...'}</span>
-      </div>
-      <div class="tweet-original">${tweet.text || ''}</div>
-      <div class="tweet-translation skeleton-pulse">Translating...</div>
-    `;
+    const header = document.createElement('div');
+    header.className = 'tweet-header';
+    const author = document.createElement('span');
+    author.className = 'tweet-author';
+    author.textContent = tweet.author || 'Loading...';
+    header.appendChild(author);
+
+    const original = document.createElement('div');
+    original.className = 'tweet-original';
+    original.textContent = tweet.text || '';
+
+    const translation = document.createElement('div');
+    translation.className = 'tweet-translation skeleton-pulse';
+    translation.textContent = 'Translating...';
+
+    skeleton.appendChild(header);
+    skeleton.appendChild(original);
+    skeleton.appendChild(translation);
 
     const targetIndex = this.tweetIndexById.get(tweet.id);
     if (typeof targetIndex !== 'number') {

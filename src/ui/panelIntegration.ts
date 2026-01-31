@@ -14,6 +14,7 @@ import { MESSAGE_TYPES } from '../messages';
 import { scrapeTweets, Tweet, TWEET_SELECTOR } from '../scraper';
 import { translateQuickStreaming, getBreakdown, Breakdown } from '../translator';
 import { renderBreakdownContent } from './breakdown';
+import { clearElement, setText } from './dom';
 
 export class PanelIntegration {
   private controller: PanelController;
@@ -99,7 +100,11 @@ export class PanelIntegration {
         }
 
         if (!this.apiKey) {
-          breakdownInner.innerHTML = '<div class="breakdown-error">API key is required for breakdowns</div>';
+          clearElement(breakdownInner);
+          const error = document.createElement('div');
+          error.className = 'breakdown-error';
+          setText(error, 'API key is required for breakdowns');
+          breakdownInner.appendChild(error);
           breakdownEl.classList.remove('hidden');
           article.classList.add('expanded');
           return;
@@ -108,7 +113,11 @@ export class PanelIntegration {
         this.breakdownsInFlight.add(tweet.id);
 
         // Show loading state
-        breakdownInner.innerHTML = '<div class="breakdown-loading">Loading breakdown...</div>';
+        clearElement(breakdownInner);
+        const loading = document.createElement('div');
+        loading.className = 'breakdown-loading';
+        setText(loading, 'Loading breakdown...');
+        breakdownInner.appendChild(loading);
         breakdownEl.classList.remove('hidden');
         article.classList.add('expanded');
 
@@ -139,17 +148,22 @@ export class PanelIntegration {
             notes: result.breakdown.notes,
           });
 
-          breakdownInner.innerHTML = '';
+          clearElement(breakdownInner);
           breakdownInner.appendChild(renderBreakdownContent(result.breakdown));
         } catch (error) {
-          breakdownInner.innerHTML = `<div class="breakdown-error">Failed to load breakdown: ${error instanceof Error ? error.message : 'Unknown error'}</div>`;
+          clearElement(breakdownInner);
+          const errorEl = document.createElement('div');
+          errorEl.className = 'breakdown-error';
+          const message = error instanceof Error ? error.message : 'Unknown error';
+          setText(errorEl, `Failed to load breakdown: ${message}`);
+          breakdownInner.appendChild(errorEl);
         } finally {
           this.breakdownsInFlight.delete(tweet.id);
         }
       } else {
         const cached = this.breakdownCache.get(tweet.id)!;
         if (breakdownInner.children.length === 0 || breakdownInner.querySelector('.breakdown-loading')) {
-          breakdownInner.innerHTML = '';
+          clearElement(breakdownInner);
           breakdownInner.appendChild(renderBreakdownContent(cached));
         }
         breakdownEl.classList.remove('hidden');

@@ -66,6 +66,12 @@ function getStartOfMonth(date: Date): Date {
   return d;
 }
 
+function getStartOfDay(date: Date): Date {
+  const d = new Date(date);
+  d.setUTCHours(0, 0, 0, 0);
+  return d;
+}
+
 export class CostTracker {
   private entries: UsageEntry[] = [];
 
@@ -102,6 +108,24 @@ export class CostTracker {
 
   getAllTimeTotal(): number {
     return this.entries.reduce((sum, entry) => sum + entry.cost, 0);
+  }
+
+  getTodayUsage(): { inputTokens: number; outputTokens: number; cost: number; count: number } {
+    const now = new Date();
+    const dayStart = getStartOfDay(now);
+
+    return this.entries
+      .filter((entry) => new Date(entry.timestamp) >= dayStart)
+      .reduce(
+        (acc, entry) => {
+          acc.inputTokens += entry.inputTokens;
+          acc.outputTokens += entry.outputTokens;
+          acc.cost += entry.cost;
+          acc.count += 1;
+          return acc;
+        },
+        { inputTokens: 0, outputTokens: 0, cost: 0, count: 0 }
+      );
   }
 
   serialize(): string {

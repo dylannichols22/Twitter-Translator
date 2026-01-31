@@ -255,6 +255,47 @@ describe('Background Script', () => {
       });
       expect(result).toEqual({ success: true, tweets: [] });
     });
+
+    it('returns today usage stats from cost tracker', async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2024-01-15T10:00:00Z'));
+
+      const entries = [
+        {
+          inputTokens: 120,
+          outputTokens: 240,
+          cost: 0.01,
+          timestamp: '2024-01-15T01:00:00Z',
+        },
+        {
+          inputTokens: 30,
+          outputTokens: 60,
+          cost: 0.003,
+          timestamp: '2024-01-14T23:00:00Z',
+        },
+      ];
+
+      mockStorage.local.get.mockResolvedValue({
+        costData: JSON.stringify(entries),
+      });
+
+      const message: Message = {
+        type: MESSAGE_TYPES.GET_USAGE_STATS,
+      };
+
+      const result = await handleMessage(message, {}, vi.fn());
+
+      expect(result).toEqual({
+        today: {
+          inputTokens: 120,
+          outputTokens: 240,
+          cost: 0.01,
+          count: 1,
+        },
+      });
+
+      vi.useRealTimers();
+    });
   });
 
   describe('MESSAGE_TYPES', () => {
@@ -263,6 +304,7 @@ describe('Background Script', () => {
       expect(MESSAGE_TYPES.OPEN_TRANSLATE_PAGE).toBeDefined();
       expect(MESSAGE_TYPES.GET_SETTINGS).toBeDefined();
       expect(MESSAGE_TYPES.SAVE_SETTINGS).toBeDefined();
+      expect(MESSAGE_TYPES.GET_USAGE_STATS).toBeDefined();
       expect(MESSAGE_TYPES.SCRAPE_MORE).toBeDefined();
     });
   });
