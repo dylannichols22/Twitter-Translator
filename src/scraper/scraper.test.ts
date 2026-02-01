@@ -374,6 +374,78 @@ describe('Twitter Scraper', () => {
       expect(comment?.id.startsWith('fallback-')).toBe(true);
       expect(comment?.author).toContain('评论用户');
     });
+    it('includes Weibo subreplies in structured lists with proper grouping', () => {
+      Object.defineProperty(window, 'location', {
+        value: { href: 'https://weibo.com/3036474003/QpvUKvcOp' },
+        writable: true,
+        configurable: true,
+      });
+
+      document.body.innerHTML = `
+        <article class="woo-panel-main">
+          <div class="_wbtext_abc">Main post content</div>
+        </article>
+        <div class="wbpro-list">
+          <div class="item1">
+            <div class="text"><a>TopUser</a>:<span>Top reply</span></div>
+            <div class="info">26-1-29 17:45</div>
+          </div>
+          <div class="list2">
+            <div class="item2">
+              <div class="text"><a>SubUser1</a>:<span>First sub reply</span></div>
+              <div class="info">26-1-29 17:46</div>
+            </div>
+            <div class="item2">
+              <div class="text"><a>SubUser2</a>:<span>Second sub reply</span></div>
+              <div class="info">26-1-29 17:47</div>
+            </div>
+          </div>
+        </div>
+        <div class="wbpro-list">
+          <div class="item1">
+            <div class="text"><a>AnotherUser</a>:<span>Another top reply</span></div>
+            <div class="info">26-1-29 18:00</div>
+          </div>
+        </div>
+      `;
+
+      const result = scrapeTweets();
+      // Should have: main post + 2 top-level replies + 2 subreplies = 5 tweets
+      expect(result.tweets).toHaveLength(5);
+
+      // Main post should be first
+      expect(result.tweets[0].isMainPost).toBe(true);
+      expect(result.tweets[0].text).toBe('Main post content');
+
+      // Top-level replies should not be inline
+      const topReply1 = result.tweets.find((t) => t.author === 'TopUser');
+      expect(topReply1).toBeTruthy();
+      expect(topReply1?.inlineReply).toBe(false);
+      expect(topReply1?.text).toBe('Top reply');
+
+      const topReply2 = result.tweets.find((t) => t.author === 'AnotherUser');
+      expect(topReply2).toBeTruthy();
+      expect(topReply2?.inlineReply).toBe(false);
+
+      // Subreplies should be marked as inline and included
+      const subReply1 = result.tweets.find((t) => t.author === 'SubUser1');
+      expect(subReply1).toBeTruthy();
+      expect(subReply1?.inlineReply).toBe(true);
+      expect(subReply1?.text).toBe('First sub reply');
+
+      const subReply2 = result.tweets.find((t) => t.author === 'SubUser2');
+      expect(subReply2).toBeTruthy();
+      expect(subReply2?.inlineReply).toBe(true);
+      expect(subReply2?.text).toBe('Second sub reply');
+
+      // Group boundaries: TopUser and subreplies should be grouped together
+      expect(topReply1?.groupStart).toBe(true);
+      expect(topReply1?.groupEnd).toBe(false);
+      expect(subReply1?.groupStart).toBe(false);
+      expect(subReply1?.groupEnd).toBe(false);
+      expect(subReply2?.groupStart).toBe(false);
+      expect(subReply2?.groupEnd).toBe(true);
+    });
   });
 });
 

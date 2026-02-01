@@ -241,7 +241,8 @@ export class PanelIntegration {
     };
     const getPrimaryTweetId = (): string | null => {
       const articles = getPrimaryCandidates();
-      for (const article of articles) {
+
+for (const article of articles) {
         // Skip nested posts (quotes)
         if (article.parentElement?.closest(postSelector)) {
           continue;
@@ -484,7 +485,74 @@ export class PanelIntegration {
           : null;
       };
 
-    for (const article of articles) {
+      const sanitizeWeiboText = (value: string): string => {
+        return value
+          .replace(/Translate content/gi, '')
+          .replace(/\s+/g, ' ')
+          .replace(/Total of\s+\d+\s+replies?/gi, '')
+          .replace(/\b\d{2}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b/g, '')
+          .replace(/\b(from|\u6765\u81EA)\s*[^\s]+/gi, '')
+          .replace(/\b\d+\s*(replies?|\u56DE\u590D|\u8BC4\u8BBA)\b/gi, '')
+          .replace(/\u5171?\d+\u6761\u56DE\u590D/g, '')
+          .trim();
+      };
+
+      // Note: Flat text parsing removed - real Weibo uses only structured format
+
+
+      // Extract entries from Weibo structured format - matches scraper.ts logic
+      const extractWeiboStructuredEntries = (article: Element): Array<{
+        author: string;
+        text: string;
+        timestamp: string;
+      }> => {
+        if (!article.matches('.wbpro-list')) {
+          return [];
+        }
+
+        const entries: Array<{ author: string; text: string; timestamp: string }> = [];
+
+        const extractEntry = (container: Element | null): void => {
+          if (!container) return;
+          const textEl = container.querySelector('.text');
+          if (!textEl) return;
+
+          // Author is in the <a> tag
+          const authorEl = textEl.querySelector('a');
+          const author = authorEl?.textContent?.trim() ?? '';
+
+          // Get text content and remove author prefix
+          let text = textEl.textContent?.trim() ?? '';
+          // Remove author name and colon from start of text
+          if (author && text.startsWith(author)) {
+            text = text.slice(author.length).trim();
+            if (text.startsWith(':') || text.startsWith('：')) {
+              text = text.slice(1).trim();
+            }
+          }
+
+          text = sanitizeWeiboText(text);
+          if (!author || !text || /\u5171\d+\u6761\u56DE\u590D/.test(text)) return;
+
+          // Extract timestamp from .info element
+          const infoText = container.querySelector('.info')?.textContent ?? '';
+          const timeMatch = infoText.match(/\b\d{2}-\d{1,2}-\d{1,2}\s+\d{1,2}:\d{2}\b/);
+          const timestamp = timeMatch?.[0] ?? '';
+
+          entries.push({ author, text, timestamp });
+        };
+
+        // Extract top-level reply (item1)
+        extractEntry(article.querySelector('.item1'));
+
+        // Extract subreplies (item2 within list2)
+        const replies = Array.from(article.querySelectorAll('.list2 .item2'));
+        replies.forEach((reply) => extractEntry(reply));
+
+        return entries;
+      };
+
+      for (const article of articles) {
       // Skip nested posts (quotes)
       if (article.parentElement?.closest(postSelector)) {
         continue;
@@ -502,16 +570,20 @@ export class PanelIntegration {
         let author = authorEl?.textContent?.trim() ?? '';
         const timeEl = findWithinOrSelf(article, this.platform.selectors.timestamp);
         const timestamp = timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? '';
-
-        if (!author && this.platform.name === 'weibo' && text) {
-          const match = text.match(/^\s*([^:：]{1,30})[:：]\s*(.+)$/);
-          if (match) {
-            author = match[1].trim();
-            text = match[2].trim();
+        if (this.platform.name === 'weibo') {
+          const structured = extractWeiboStructuredEntries(article);
+          if (structured.length > 0) {
+            structured.forEach((entry) => {
+              ids.add(buildFallbackId(entry.text, entry.author, entry.timestamp));
+            });
+          } else if (text || author || timestamp) {
+            // For non-structured Weibo posts, clean the text and generate ID
+            const cleanedText = sanitizeWeiboText(text);
+            if (cleanedText || author || timestamp) {
+              ids.add(buildFallbackId(cleanedText, author, timestamp));
+            }
           }
-        }
-
-        if (text || author || timestamp) {
+        } else if (text || author || timestamp) {
           ids.add(buildFallbackId(text, author, timestamp));
         }
       }

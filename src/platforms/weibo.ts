@@ -24,6 +24,9 @@ const WEIBO_SELECTORS: PlatformSelectors = {
   // TODO: Verify these selectors on weibo.com
   postContainer: [
     'article.woo-panel-main',
+    'article.weibo-main',
+    '[class*="weibo-main"]',
+    '.comment-content .card',
     '.wbpro-list',
   ].join(', '),
 
@@ -73,14 +76,16 @@ const WEIBO_SELECTORS: PlatformSelectors = {
   showRepliesButton: '[class*="more_comment"], [action-type="more_comment"], [class*="expand"]',
 
   // Main content column
-  // TODO: Weibo's main content area structure
+  // NOTE: Order matters - specific containers first, generic selectors last
+  // to avoid matching article elements (e.g., woo-panel-main) instead of containers
   mainColumn: [
-    'article.weibo-main',
-    '[class*="weibo-main"]',
-    '[class*="main"]',
     '#app',
     '[class*="Frame_main"]',
     '[class*="weibo-detail"]',
+    'article.weibo-main',
+    '[class*="weibo-main"]',
+    '[role="main"]',
+    'main',
   ].join(', '),
 
   // Cell/item container for individual posts
@@ -205,7 +210,7 @@ class WeiboPlatform implements Platform {
 
     // Fallback: check id attribute if it looks like a numeric/b62 post id
     const elementId = element.getAttribute('id');
-    if (elementId && !/[._:\-]/.test(elementId)) {
+    if (elementId && !/[._:-]/.test(elementId)) {
       if (/^\d+$/.test(elementId)) return elementId;
       if (/^[A-Za-z0-9]{6,}$/.test(elementId)) return elementId;
     }
