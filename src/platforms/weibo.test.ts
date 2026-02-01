@@ -30,4 +30,15 @@ describe('weiboPlatform', () => {
     });
     expect(weiboPlatform.extractPostIdFromElement(element)).toBe('5261077984314647');
   });
+
+  it('falls back to URL id for woo-panel main article when element lacks attributes', () => {
+    const element = document.createElement('article');
+    element.className = 'woo-panel-main';
+    Object.defineProperty(window, 'location', {
+      value: { href: 'https://weibo.com/3036474003/QpvUKvcOp' },
+      writable: true,
+      configurable: true,
+    });
+    expect(weiboPlatform.extractPostIdFromElement(element)).toBe('QpvUKvcOp');
+  });
 });

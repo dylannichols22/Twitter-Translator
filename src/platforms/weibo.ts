@@ -23,28 +23,23 @@ const WEIBO_SELECTORS: PlatformSelectors = {
   // Main post/weibo container - Weibo uses div with specific classes
   // TODO: Verify these selectors on weibo.com
   postContainer: [
-    'article.weibo-main',
-    '[class*="weibo-main"]',
-    '[class*="wbpro-feed"]',
-    '[class*="card-wrap"]',
-    '.woo-box-flex[class*="Feed"]',
-    '[class*="weibo-detail"]',
-    '[data-mid]',
-    '[data-id]',
-    '.comment-content .card',
-    'article',
+    'article.woo-panel-main',
+    '.wbpro-list',
   ].join(', '),
 
   // Post text content
   // TODO: Weibo wraps text in spans with @mentions and #topics
   postText: [
+    '.wbpro-feed-ogText',
+    '[class*="_wbtext_"]',
     '[class*="detail_wbtext"]',
-    '[class*="txt"]',
+    '[class*="wbtext"]',
     '[class*="Feed_body"]',
     '.weibo-text',
     '[class*="weibo-text"]',
     '.cmt-sub-txt',
     '.comment-content .cmt-sub-txt p',
+    '.wbpro-list',
   ].join(', '),
 
   // Author name - usually in a user card/link
@@ -53,6 +48,8 @@ const WEIBO_SELECTORS: PlatformSelectors = {
     '[class*="head_name"]',
     '[class*="name"]',
     'a[usercard]',
+    'a[class*="_name_"]',
+    'a[href*="/u/"]',
     '[class*="weibo-user"] a',
     '.m-text-cut',
   ].join(', '),
@@ -88,7 +85,7 @@ const WEIBO_SELECTORS: PlatformSelectors = {
 
   // Cell/item container for individual posts
   // TODO: Weibo's list item wrapper
-  cellContainer: '[class*="card"], [class*="list_item"], [class*="Feed_item"], [class*="weibo-detail"], [class*="weibo-main"]',
+  cellContainer: '[class*="card"], [class*="list_item"], [class*="Feed_item"], [class*="weibo-detail"], [class*="weibo-main"], .wbpro-list, article.woo-panel-main',
 };
 
 class WeiboPlatform implements Platform {
@@ -214,7 +211,7 @@ class WeiboPlatform implements Platform {
     }
 
     // Final fallback: use URL for known detail pages (e.g., m.weibo.cn/detail/ID)
-    if (element.matches('article.weibo-main, [class*="weibo-main"]')) {
+    if (element.matches('article.weibo-main, article.woo-panel-main, [class*="weibo-main"], [class*="wbpro-feed"]')) {
       const fromUrl = this.extractPostId(window.location.href);
       if (fromUrl) return fromUrl;
     }

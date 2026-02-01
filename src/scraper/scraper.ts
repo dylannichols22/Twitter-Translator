@@ -77,22 +77,43 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
     return { parent: row.parentElement, index: siblings.indexOf(row) };
   };
 
+  const findWithinOrSelf = (element: Element, selector: string): Element | null =>
+    element.querySelector(selector) ?? (element.matches(selector) ? element : null);
+
+  const findFirstTextMatch = (element: Element, selector: string): Element | null => {
+    const matches = Array.from(element.querySelectorAll(selector));
+    const withText = matches.find((match) => (match.textContent ?? '').trim().length > 0);
+    if (withText) return withText;
+    return element.matches(selector) && (element.textContent ?? '').trim().length > 0
+      ? element
+      : null;
+  };
+
   articles.forEach((article, index) => {
     // Extract text using platform selector
-    const textEl = article.querySelector(platform.selectors.postText);
+    const textEl = findWithinOrSelf(article, platform.selectors.postText);
     const text = textEl?.textContent?.trim() ?? '';
 
     // Extract author using platform selector
-    const authorEl = article.querySelector(platform.selectors.authorName);
-    const author = authorEl?.textContent?.trim() ?? '';
+    const authorEl = findFirstTextMatch(article, platform.selectors.authorName);
+    let author = authorEl?.textContent?.trim() ?? '';
 
     // Extract timestamp using platform selector
-    const timeEl = article.querySelector(platform.selectors.timestamp);
+    const timeEl = findWithinOrSelf(article, platform.selectors.timestamp);
     const timestamp = timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? '';
 
     // Extract ID using platform method
     const resolvedId = platform.extractPostIdFromElement(article);
-    const id = resolvedId || buildFallbackId(text, author, timestamp);
+    let finalText = text;
+    if (!author && platform.name === 'weibo' && text) {
+      const match = text.match(/^\s*([^:：]{1,30})[:：]\s*(.+)$/);
+      if (match) {
+        author = match[1].trim();
+        finalText = match[2].trim();
+      }
+    }
+
+    const id = resolvedId || buildFallbackId(finalText, author, timestamp);
 
     // Get reply status using platform method
     const hasReplies = platform.hasReplies(article);
@@ -108,7 +129,7 @@ export function scrapeTweets(options: ScrapeOptions = {}): ThreadData {
 
     tweets.push({
       id,
-      text,
+      text: finalText,
       author,
       timestamp,
       isMainPost,

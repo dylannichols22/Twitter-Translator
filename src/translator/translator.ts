@@ -357,6 +357,19 @@ export async function translateQuickStreaming(
     // REQ-1.4: Check abort before calling onComplete
     if (signal?.aborted) return;
 
+    try {
+      const jsonText = extractJson(fullText);
+      const translations = parseQuickTranslationResponse(jsonText);
+      for (const translation of translations) {
+        if (!seenIds.has(translation.id) && !signal?.aborted) {
+          seenIds.add(translation.id);
+          callbacks.onTranslation(translation);
+        }
+      }
+    } catch {
+      // Ignore parse failures; onComplete still reports usage.
+    }
+
     callbacks.onComplete({
       inputTokens: finalMessage.usage.input_tokens,
       outputTokens: finalMessage.usage.output_tokens,

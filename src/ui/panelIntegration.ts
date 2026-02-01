@@ -467,10 +467,22 @@ export class PanelIntegration {
       return Math.abs(hash).toString(36);
     };
 
-    const buildFallbackId = (text: string, author: string, timestamp: string): string => {
-      const base = `${author}|${timestamp}|${text}`;
-      return `fallback-${hashString(base)}`;
-    };
+      const buildFallbackId = (text: string, author: string, timestamp: string): string => {
+        const base = `${author}|${timestamp}|${text}`;
+        return `fallback-${hashString(base)}`;
+      };
+
+      const findWithinOrSelf = (element: Element, selector: string): Element | null =>
+        element.querySelector(selector) ?? (element.matches(selector) ? element : null);
+
+      const findFirstTextMatch = (element: Element, selector: string): Element | null => {
+        const matches = Array.from(element.querySelectorAll(selector));
+        const withText = matches.find((match) => (match.textContent ?? '').trim().length > 0);
+        if (withText) return withText;
+        return element.matches(selector) && (element.textContent ?? '').trim().length > 0
+          ? element
+          : null;
+      };
 
     for (const article of articles) {
       // Skip nested posts (quotes)
@@ -484,17 +496,25 @@ export class PanelIntegration {
         continue;
       }
 
-      const textEl = article.querySelector(this.platform.selectors.postText);
-      const text = textEl?.textContent?.trim() ?? '';
-      const authorEl = article.querySelector(this.platform.selectors.authorName);
-      const author = authorEl?.textContent?.trim() ?? '';
-      const timeEl = article.querySelector(this.platform.selectors.timestamp);
-      const timestamp = timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? '';
+        const textEl = findWithinOrSelf(article, this.platform.selectors.postText);
+        let text = textEl?.textContent?.trim() ?? '';
+        const authorEl = findFirstTextMatch(article, this.platform.selectors.authorName);
+        let author = authorEl?.textContent?.trim() ?? '';
+        const timeEl = findWithinOrSelf(article, this.platform.selectors.timestamp);
+        const timestamp = timeEl?.getAttribute('datetime') ?? timeEl?.textContent?.trim() ?? '';
 
-      if (text || author || timestamp) {
-        ids.add(buildFallbackId(text, author, timestamp));
+        if (!author && this.platform.name === 'weibo' && text) {
+          const match = text.match(/^\s*([^:：]{1,30})[:：]\s*(.+)$/);
+          if (match) {
+            author = match[1].trim();
+            text = match[2].trim();
+          }
+        }
+
+        if (text || author || timestamp) {
+          ids.add(buildFallbackId(text, author, timestamp));
+        }
       }
-    }
 
     return ids;
   }

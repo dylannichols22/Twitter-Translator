@@ -207,5 +207,57 @@ describe('Translator', () => {
         outputTokens: 34,
       });
     });
+
+    it('emits translations parsed after stream completes', async () => {
+      let onText: ((text: string) => void) | undefined;
+      let resolveFinal: ((value: { usage: { input_tokens: number; output_tokens: number } }) => void) | undefined;
+
+      mockStream.mockImplementation(() => ({
+        on: (event: string, handler: (text: string) => void) => {
+          if (event === 'text') {
+            onText = handler;
+          }
+        },
+        finalMessage: () =>
+          new Promise((resolve) => {
+            resolveFinal = resolve;
+          }),
+        controller: { abort: vi.fn() },
+      }));
+
+      const onTranslation = vi.fn();
+      const onComplete = vi.fn();
+      const onError = vi.fn();
+
+      const translationJson = JSON.stringify({
+        translations: [
+          {
+            id: '1',
+            naturalTranslation: 'He said "hello" and left.',
+          },
+        ],
+      });
+
+      const run = translateQuickStreaming([mockTweets[0]], 'test-api-key', {
+        onTranslation,
+        onComplete,
+        onError,
+      });
+
+      onText?.(translationJson);
+      resolveFinal?.({ usage: { input_tokens: 5, output_tokens: 9 } });
+
+      await run;
+
+      expect(onError).not.toHaveBeenCalled();
+      expect(onTranslation).toHaveBeenCalledWith({
+        id: '1',
+        naturalTranslation: 'He said "hello" and left.',
+      });
+      expect(onComplete).toHaveBeenCalledWith({
+        inputTokens: 5,
+        outputTokens: 9,
+      });
+    });
   });
 });
