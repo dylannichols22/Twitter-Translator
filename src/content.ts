@@ -1,4 +1,4 @@
-import { scrapeTweets, Tweet, ScrapeOptions, getPostSelector } from './scraper';
+import { scrapeTweets, Tweet, ScrapeOptions } from './scraper';
 import { MESSAGE_TYPES, Message } from './messages';
 import { PanelIntegration } from './ui/panelIntegration';
 import { getCurrentPlatform, isSupportedPlatformUrl, twitterPlatform } from './platforms';

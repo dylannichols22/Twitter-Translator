@@ -12,7 +12,8 @@ import { PanelController, CachedTranslation } from './panelController';
 import { UrlWatcher } from './urlWatcher';
 import { MESSAGE_TYPES } from '../messages';
 import { scrapeTweets, Tweet } from '../scraper';
-import { translateQuickStreaming, getBreakdown, Breakdown } from '../translator';
+import { getProvider, getProviderApiKey, type Provider } from '../translator';
+import type { QuickTranslation, Breakdown, UsageStats, QuickStreamCallbacks } from '../translator/providers/types';
 import { renderBreakdownContent } from './breakdown';
 import { clearElement, setText } from './dom';
 import { getCurrentPlatform, isThreadUrl, extractPostId, twitterPlatform, Platform } from '../platforms';
@@ -25,6 +26,7 @@ export class PanelIntegration {
   private breakdownCache: Map<string, Breakdown> = new Map();
   private commentLimit: number | undefined;
   private platform: Platform;
+  private provider: Provider = 'anthropic';
 
   // Navigation token for rejecting stale work
   private navToken = 0;
@@ -43,6 +45,9 @@ export class PanelIntegration {
   private syncObserver: MutationObserver | null = null;
   private syncDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly SYNC_DEBOUNCE_MS = 150;
+
+  // Scroll jank instrumentation (minimal)
+  private syncCount = 0;
 
   // Track tweets currently being translated
   private currentTweets: Map<string, Tweet> = new Map();
@@ -126,7 +131,8 @@ export class PanelIntegration {
 
         try {
           const opTweet = this.tweets[0];
-          const result = await getBreakdown(tweet.text, this.apiKey, {
+          const translationProvider = getProvider(this.provider);
+          const result = await translationProvider.getBreakdown(tweet.text, this.apiKey, {
             opAuthor: opTweet?.author,
             opText: opTweet?.text,
             opUrl: opTweet?.url,
@@ -189,9 +195,6 @@ export class PanelIntegration {
   private beginNavigation(): void {
     // Increment navigation token to invalidate all in-flight work
     this.navToken += 1;
-    const token = this.navToken;
-
-    console.debug('[Panel] beginNavigation', { navToken: token });
 
     // Abort any in-flight operations
     this.abortController?.abort();
@@ -256,7 +259,6 @@ for (const article of articles) {
     while (Date.now() - start < timeoutMs) {
       // Check if navigation was superseded
       if (token !== this.navToken) {
-        console.debug('[Panel] gateThreadReady: navToken changed', { token, current: this.navToken });
         return false;
       }
 
@@ -268,13 +270,11 @@ for (const article of articles) {
       // Check if URL still matches
       const currentThreadId = extractPostId(window.location.href);
       if (currentThreadId !== targetThreadId) {
-        console.debug('[Panel] gateThreadReady: URL changed', { targetThreadId, currentThreadId });
         return false;
       }
 
       // Check if primary tweet matches
       const primaryId = getPrimaryTweetId();
-      console.debug('[Panel] gateThreadReady polling', { targetThreadId, primaryId });
 
       if (primaryId === targetThreadId) {
         return true;
@@ -324,8 +324,6 @@ for (const article of articles) {
       return;
     }
 
-    console.debug('[Panel] startSyncLoop started', { token });
-
     // Set up MutationObserver
     this.syncObserver = new MutationObserver(() => {
       this.debouncedSync(token);
@@ -371,6 +369,11 @@ for (const article of articles) {
    * Scrapes main column, diffs by id, renders skeletons, translates new tweets.
    */
   private async sync(token: number): Promise<void> {
+    // Instrumentation: sync start (minimal)
+    this.syncCount++;
+    const syncNumber = this.syncCount;
+    const startTime = performance.now();
+
     // Check navToken at start
     if (token !== this.navToken) return;
 
@@ -380,12 +383,6 @@ for (const article of articles) {
 
     // Recheck navToken after scrape
     if (token !== this.navToken) return;
-
-    console.debug('[Panel] sync', {
-      visibleCount: visible.length,
-      currentCount: this.currentTweets.size,
-      token
-    });
 
     // If panel just opened and no tweets found, show loading or empty
     if (visible.length === 0) {
@@ -404,14 +401,21 @@ for (const article of articles) {
     // Track if we made any changes
     let hasChanges = false;
 
+    // Track removed tweets for instrumentation
+    let removedCount = 0;
+
     // Remove tweets no longer visible
     for (const id of this.currentTweets.keys()) {
       if (!visibleIds.has(id)) {
         this.currentTweets.delete(id);
         this.controller.removeTweet(id);
         hasChanges = true;
+        removedCount++;
       }
     }
+
+    // Track added tweets for instrumentation
+    let addedCount = 0;
 
     // Add new tweets
     const newTweets: Tweet[] = [];
@@ -421,11 +425,13 @@ for (const article of articles) {
         this.controller.renderSkeleton(tweet);
         newTweets.push(tweet);
         hasChanges = true;
+        addedCount++;
       }
     }
 
     // Reorder to match DOM
-    this.controller.reorderTweets(visible.map((t) => t.id));
+    const targetOrder = visible.map((t) => t.id);
+    this.controller.reorderTweets(targetOrder);
 
     // Only update tweetIndexById when tweets actually changed
     if (hasChanges) {
@@ -436,6 +442,12 @@ for (const article of articles) {
     // Translate new tweets
     for (const tweet of newTweets) {
       void this.translateAndRender(tweet, token);
+    }
+
+    // Instrumentation: log slow syncs or every 10th sync for scroll jank debugging
+    const duration = Math.round(performance.now() - startTime);
+    if (syncNumber % 10 === 0 || duration > 100) {
+      console.log(`[Panel] sync #${syncNumber}: ${duration}ms, +${addedCount}/-${removedCount}`);
     }
   }
 
@@ -648,21 +660,11 @@ for (const article of articles) {
    * Visibility-checked: verifies tweet still visible, navToken, URL, and threadId match before render.
    */
   private async translateAndRender(tweet: Tweet, token: number): Promise<void> {
-    console.debug('[Panel] translateAndRender start', {
-      tweetId: tweet.id,
-      token,
-      navToken: this.navToken,
-      shouldRender: this.shouldRender(tweet.id, token),
-      activeThreadId: this.activeThreadId,
-      currentUrl: window.location.href,
-    });
-
     // Check cache first
     const cached = this.controller.getCachedTranslation(tweet.id);
     if (cached) {
       // Verify still valid before render
       if (!this.shouldRender(tweet.id, token)) {
-        console.debug('[Panel] translateAndRender: cached but shouldRender=false', { tweetId: tweet.id });
         return;
       }
 
@@ -672,7 +674,6 @@ for (const article of articles) {
 
     // Prevent duplicate translation requests
     if (this.translationsInFlight.has(tweet.id)) {
-      console.debug('[Panel] translateAndRender: already in flight', { tweetId: tweet.id });
       return;
     }
     this.translationsInFlight.add(tweet.id);
@@ -682,32 +683,26 @@ for (const article of articles) {
         // Try to get API key
         const settings = (await browser.runtime.sendMessage({
           type: MESSAGE_TYPES.GET_SETTINGS,
-        })) as { apiKey?: string; commentLimit?: number };
+        })) as { apiKey?: string; anthropicApiKey?: string; openaiApiKey?: string; googleApiKey?: string; provider?: Provider; commentLimit?: number };
 
         if (token !== this.navToken) return;
 
-        if (!settings?.apiKey) {
+        this.provider = settings?.provider ?? 'anthropic';
+        this.apiKey = getProviderApiKey(settings as { provider: Provider; apiKey: string; anthropicApiKey: string; openaiApiKey: string; googleApiKey: string; commentLimit: number }) ?? '';
+        this.commentLimit = settings.commentLimit;
+
+        if (!this.apiKey) {
           this.controller.showError('Please set your API key in the extension settings');
           return;
         }
-        this.apiKey = settings.apiKey;
-        this.commentLimit = settings.commentLimit;
       }
 
       // Translate single tweet
-      await translateQuickStreaming([tweet], this.apiKey, {
-        signal: this.abortController?.signal,
-        onTranslation: (translation) => {
-          console.debug('[Panel] onTranslation', {
-            tweetId: translation.id,
-            token,
-            navToken: this.navToken,
-            shouldRender: this.shouldRender(tweet.id, token),
-          });
-
+      const translationProvider = getProvider(this.provider);
+      const callbacks: QuickStreamCallbacks = {
+        onTranslation: (translation: QuickTranslation) => {
           // Verify all rejection rules before render
           if (!this.shouldRender(tweet.id, token)) {
-            console.debug('[Panel] onTranslation: rejected by shouldRender', { tweetId: tweet.id });
             return;
           }
 
@@ -719,9 +714,8 @@ for (const article of articles) {
           };
           this.controller.cacheTranslation(translation.id, cachedTranslation);
           this.controller.updateTweet(tweet, cachedTranslation);
-          console.debug('[Panel] onTranslation: updateTweet called', { tweetId: tweet.id });
         },
-        onComplete: async (usage) => {
+        onComplete: async (usage: UsageStats) => {
           this.controller.addUsage(usage);
           this.controller.updateFooter();
 
@@ -733,10 +727,11 @@ for (const article of articles) {
             },
           });
         },
-        onError: (error) => {
+        onError: (error: Error) => {
           console.warn('[Panel] onError', { tweetId: tweet.id, error: error.message });
         },
-      });
+      };
+      await translationProvider.translateQuickStreaming([tweet], this.apiKey, callbacks);
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         return;
@@ -758,11 +753,6 @@ for (const article of articles) {
 
     // Update platform based on new URL
     this.platform = getCurrentPlatform() ?? twitterPlatform;
-
-    console.debug('[Panel] URL changed', {
-      newUrl,
-      threadId: extractPostId(newUrl),
-    });
 
     // Start navigation flow
     this.beginNavigation();
@@ -791,19 +781,20 @@ for (const article of articles) {
     try {
       const settings = (await browser.runtime.sendMessage({
         type: MESSAGE_TYPES.GET_SETTINGS,
-      })) as { apiKey?: string; commentLimit?: number };
+      })) as { apiKey?: string; anthropicApiKey?: string; openaiApiKey?: string; googleApiKey?: string; provider?: Provider; commentLimit?: number };
 
       if (token !== this.navToken) return;
 
-      if (!settings?.apiKey) {
+      this.provider = settings?.provider ?? 'anthropic';
+      this.apiKey = getProviderApiKey(settings as { provider: Provider; apiKey: string; anthropicApiKey: string; openaiApiKey: string; googleApiKey: string; commentLimit: number }) ?? '';
+      this.commentLimit = settings.commentLimit;
+
+      if (!this.apiKey) {
         this.controller.showLoading(false);
         this.controller.showError('Please set your API key in the extension settings');
         this.controller.setLoadMoreEnabled(false);
         return;
       }
-
-      this.apiKey = settings.apiKey;
-      this.commentLimit = settings.commentLimit;
     } catch {
       if (token !== this.navToken) return;
       this.controller.showLoading(false);

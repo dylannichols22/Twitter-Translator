@@ -1,12 +1,38 @@
-export interface Settings {
+export type Provider = 'anthropic' | 'openai' | 'google';
+
+export interface ProviderConfig {
+  provider: Provider;
   apiKey: string;
+}
+
+export interface Settings {
+  provider: Provider;
+  apiKey: string;
+  openaiApiKey: string;
+  googleApiKey: string;
   commentLimit: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  provider: 'anthropic',
   apiKey: '',
+  openaiApiKey: '',
+  googleApiKey: '',
   commentLimit: 10, // Default to 10 comments
 };
+
+export function getProviderApiKey(settings: Settings): string {
+  switch (settings.provider) {
+    case 'anthropic':
+      return settings.apiKey;
+    case 'openai':
+      return settings.openaiApiKey;
+    case 'google':
+      return settings.googleApiKey;
+    default:
+      return '';
+  }
+}
 
 const STORAGE_KEYS = {
   settings: 'settings',

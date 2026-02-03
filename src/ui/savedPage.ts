@@ -14,7 +14,7 @@ class SavedPageController {
   private downloadExportBtn: HTMLButtonElement | null;
   private copyExportBtn: HTMLElement | null;
   private closeModalBtn: HTMLElement | null;
-  private filterBtns: NodeListOf<HTMLButtonElement>;
+  private filterBtns: HTMLButtonElement[];
 
   private items: SavedItem[] = [];
   private currentFilter: SavedItemType | 'all' = 'all';
@@ -32,7 +32,7 @@ class SavedPageController {
     this.downloadExportBtn = document.getElementById('download-anki') as HTMLButtonElement;
     this.copyExportBtn = document.getElementById('copy-export');
     this.closeModalBtn = document.getElementById('close-modal');
-    this.filterBtns = document.querySelectorAll('.filter-btn');
+    this.filterBtns = Array.from(document.querySelectorAll('.filter-btn')) as HTMLButtonElement[];
 
     this.bindEvents();
     this.loadItems();

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   DEFAULT_SETTINGS,
   StorageManager,
+  getProviderApiKey,
+  type Settings,
 } from './storage';
 
 // Mock the browser storage API
@@ -91,7 +93,10 @@ describe('Storage Module', () => {
     describe('saveSettings', () => {
       it('saves settings to storage', async () => {
         await storage.saveSettings({
+          provider: 'anthropic',
           apiKey: 'new-key',
+          openaiApiKey: '',
+          googleApiKey: '',
           commentLimit: 30,
         });
 
@@ -104,7 +109,10 @@ describe('Storage Module', () => {
       it('validates comment limit is positive', async () => {
         await expect(
           storage.saveSettings({
+            provider: 'anthropic',
             apiKey: '',
+            openaiApiKey: '',
+            googleApiKey: '',
             commentLimit: -5,
           })
         ).rejects.toThrow('Comment limit must be positive');
@@ -113,7 +121,10 @@ describe('Storage Module', () => {
       it('validates comment limit is a number', async () => {
         await expect(
           storage.saveSettings({
+            provider: 'anthropic',
             apiKey: '',
+            openaiApiKey: '',
+            googleApiKey: '',
             // @ts-expect-error - testing runtime validation
             commentLimit: 'invalid',
           })
@@ -129,7 +140,10 @@ describe('Storage Module', () => {
 
       it('returns stored API key', async () => {
         mockStorage['settings'] = JSON.stringify({
+          provider: 'anthropic',
           apiKey: 'stored-key',
+          openaiApiKey: '',
+          googleApiKey: '',
           commentLimit: 10,
         });
 
@@ -148,7 +162,10 @@ describe('Storage Module', () => {
 
       it('preserves other settings when updating API key', async () => {
         mockStorage['settings'] = JSON.stringify({
+          provider: 'anthropic',
           apiKey: 'old-key',
+          openaiApiKey: '',
+          googleApiKey: '',
           commentLimit: 25,
         });
 
@@ -186,13 +203,78 @@ describe('Storage Module', () => {
 
     describe('clearAll', () => {
       it('clears all stored data', async () => {
-        mockStorage['settings'] = JSON.stringify({ apiKey: 'key' });
+        mockStorage['settings'] = JSON.stringify({
+          provider: 'anthropic',
+          apiKey: 'key',
+          openaiApiKey: '',
+          googleApiKey: '',
+          commentLimit: 10,
+        });
         mockStorage['costData'] = JSON.stringify('data');
 
         await storage.clearAll();
 
         expect(mockBrowserStorage.local.remove).toHaveBeenCalledWith(['settings', 'costData']);
       });
+    });
+  });
+
+  describe('getProviderApiKey', () => {
+    it('returns anthropic apiKey when provider is anthropic', () => {
+      const settings: Settings = {
+        provider: 'anthropic',
+        apiKey: 'claude-key-123',
+        openaiApiKey: 'openai-key-456',
+        googleApiKey: 'google-key-789',
+        commentLimit: 10,
+      };
+      expect(getProviderApiKey(settings)).toBe('claude-key-123');
+    });
+
+    it('returns openaiApiKey when provider is openai', () => {
+      const settings: Settings = {
+        provider: 'openai',
+        apiKey: 'claude-key-123',
+        openaiApiKey: 'openai-key-456',
+        googleApiKey: 'google-key-789',
+        commentLimit: 10,
+      };
+      expect(getProviderApiKey(settings)).toBe('openai-key-456');
+    });
+
+    it('returns googleApiKey when provider is google', () => {
+      const settings: Settings = {
+        provider: 'google',
+        apiKey: 'claude-key-123',
+        openaiApiKey: 'openai-key-456',
+        googleApiKey: 'google-key-789',
+        commentLimit: 10,
+      };
+      expect(getProviderApiKey(settings)).toBe('google-key-789');
+    });
+
+    it('returns empty string when provider key is not set', () => {
+      const settings: Settings = {
+        provider: 'openai',
+        apiKey: 'claude-key-123',
+        openaiApiKey: '',
+        googleApiKey: 'google-key-789',
+        commentLimit: 10,
+      };
+      expect(getProviderApiKey(settings)).toBe('');
+    });
+
+    it('handles switching from anthropic to openai provider', () => {
+      // Simulate user switching from anthropic to openai
+      const settings: Settings = {
+        provider: 'openai',
+        apiKey: '', // Cleared the claude key
+        openaiApiKey: 'new-openai-key',
+        googleApiKey: '',
+        commentLimit: 10,
+      };
+      // Should return the openai key even though anthropic key is empty
+      expect(getProviderApiKey(settings)).toBe('new-openai-key');
     });
   });
 });

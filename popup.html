@@ -116,7 +116,7 @@
       margin-bottom: 4px;
     }
 
-    input {
+    input, select {
       width: 100%;
       padding: 10px 12px;
       border: 1px solid var(--border);
@@ -127,9 +127,21 @@
       box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
     }
 
-    input:focus {
+    input:focus, select:focus {
       outline: none;
       border-color: var(--accent);
+    }
+
+    select {
+      cursor: pointer;
+    }
+
+    .api-key-group {
+      display: none;
+    }
+
+    .api-key-group.active {
+      display: block;
     }
 
     .cost-stats {
@@ -202,8 +214,27 @@
 
     <div class="settings-form">
       <div class="form-group">
-        <label for="api-key-input">Claude API Key</label>
-        <input type="password" id="api-key-input" placeholder="sk-ant-...">
+        <label for="provider-select">Translation Provider</label>
+        <select id="provider-select">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT-4o mini)</option>
+          <option value="google">Google (Gemini)</option>
+        </select>
+      </div>
+
+      <div id="anthropic-key-group" class="form-group api-key-group">
+        <label for="anthropic-key-input">Anthropic API Key</label>
+        <input type="password" id="anthropic-key-input" placeholder="sk-ant-...">
+      </div>
+
+      <div id="openai-key-group" class="form-group api-key-group">
+        <label for="openai-key-input">OpenAI API Key</label>
+        <input type="password" id="openai-key-input" placeholder="sk-...">
+      </div>
+
+      <div id="google-key-group" class="form-group api-key-group">
+        <label for="google-key-input">Google API Key</label>
+        <input type="password" id="google-key-input" placeholder="AIza...">
       </div>
 
       <div class="form-group">
@@ -237,8 +268,8 @@
 
     <div id="status-message" class="status-message"></div>
 
-    <p class="privacy-note">
-      Note: Tweet content is sent to Anthropic's API for translation.
+    <p id="privacy-note" class="privacy-note">
+      Note: Tweet content is sent to the selected provider's API for translation.
     </p>
   </div>
 

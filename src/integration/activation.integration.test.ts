@@ -231,7 +231,7 @@ describe('Activation integration flows', () => {
       <div id="status-message"></div>
       <div data-testid="tweet">
         <div data-testid="User-Name">MobileUser</div>
-        <div data-testid="tweetText"><span>Mobile ä½ å¥½</span></div>
+        <div data-testid="tweetText"><span>Mobile 你好</span></div>
         <time datetime="2024-01-16T10:30:00.000Z">Jan 16</time>
         <a href="/user/status/222">link</a>
       </div>
@@ -260,7 +260,7 @@ describe('Activation integration flows', () => {
     const data = (payload as Record<string, { tweets: Array<{ text: string }>; url: string }>)[payloadKey];
 
     expect(data.tweets).toHaveLength(1);
-    expect(data.tweets[0].text).toContain('Mobile ä½ å¥½');
+    expect(data.tweets[0].text).toContain('Mobile 你好');
     expect(data.url).toBe('https://twitter.com/user/status/2');
     expect(background.MESSAGE_TYPES.OPEN_TRANSLATE_PAGE).toBeDefined();
   });

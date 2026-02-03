@@ -142,8 +142,14 @@ export async function handleMessage(
     }
 
     case MESSAGE_TYPES.SAVE_SETTINGS: {
-      const settings = typedMessage.data as { apiKey: string; commentLimit: number };
-      await storage.saveSettings(settings);
+      const settings = typedMessage.data as { apiKey: string; commentLimit: number; provider?: string; openaiApiKey?: string; googleApiKey?: string };
+      await storage.saveSettings({
+        provider: (settings.provider as 'anthropic' | 'openai' | 'google') ?? 'anthropic',
+        apiKey: settings.apiKey,
+        openaiApiKey: settings.openaiApiKey ?? '',
+        googleApiKey: settings.googleApiKey ?? '',
+        commentLimit: settings.commentLimit,
+      });
       return { success: true };
     }
 

@@ -57,7 +57,20 @@ describe('Popup', () => {
         <div id="settings-btn"></div>
         <div id="main-view"></div>
         <div id="settings-view" class="hidden"></div>
-        <input id="api-key-input" type="password" />
+        <select id="provider-select">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI (GPT-4o mini)</option>
+          <option value="google">Google (Gemini)</option>
+        </select>
+        <div id="anthropic-key-group" class="api-key-group">
+          <input id="anthropic-key-input" type="password" />
+        </div>
+        <div id="openai-key-group" class="api-key-group">
+          <input id="openai-key-input" type="password" />
+        </div>
+        <div id="google-key-group" class="api-key-group">
+          <input id="google-key-input" type="password" />
+        </div>
         <input id="comment-limit-input" type="number" />
         <button id="save-settings-btn"></button>
         <button id="back-btn"></button>
@@ -65,6 +78,7 @@ describe('Popup', () => {
         <div id="cost-this-month"></div>
         <div id="cost-all-time"></div>
         <div id="status-message"></div>
+        <p id="privacy-note"></p>
       `;
 
       controller = new PopupController();
@@ -94,16 +108,25 @@ describe('Popup', () => {
     describe('loadSettings', () => {
       it('loads settings from background script', async () => {
         mockRuntime.sendMessage.mockResolvedValue({
+          provider: 'anthropic',
           apiKey: 'test-key',
+          openaiApiKey: 'openai-test-key',
+          googleApiKey: 'google-test-key',
           commentLimit: 15,
         });
 
         await controller.loadSettings();
 
-        const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
+        const providerSelect = document.getElementById('provider-select') as HTMLSelectElement;
+        const anthropicKeyInput = document.getElementById('anthropic-key-input') as HTMLInputElement;
+        const openaiKeyInput = document.getElementById('openai-key-input') as HTMLInputElement;
+        const googleKeyInput = document.getElementById('google-key-input') as HTMLInputElement;
         const commentLimitInput = document.getElementById('comment-limit-input') as HTMLInputElement;
 
-        expect(apiKeyInput.value).toBe('test-key');
+        expect(providerSelect.value).toBe('anthropic');
+        expect(anthropicKeyInput.value).toBe('test-key');
+        expect(openaiKeyInput.value).toBe('openai-test-key');
+        expect(googleKeyInput.value).toBe('google-test-key');
         expect(commentLimitInput.value).toBe('15');
       });
     });
@@ -146,10 +169,16 @@ describe('Popup', () => {
       it('saves settings via background script', async () => {
         mockRuntime.sendMessage.mockResolvedValue({ success: true });
 
-        const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
+        const providerSelect = document.getElementById('provider-select') as HTMLSelectElement;
+        const anthropicKeyInput = document.getElementById('anthropic-key-input') as HTMLInputElement;
+        const openaiKeyInput = document.getElementById('openai-key-input') as HTMLInputElement;
+        const googleKeyInput = document.getElementById('google-key-input') as HTMLInputElement;
         const commentLimitInput = document.getElementById('comment-limit-input') as HTMLInputElement;
 
-        apiKeyInput.value = 'new-api-key';
+        providerSelect.value = 'anthropic';
+        anthropicKeyInput.value = 'new-anthropic-key';
+        openaiKeyInput.value = 'new-openai-key';
+        googleKeyInput.value = 'new-google-key';
         commentLimitInput.value = '20';
 
         await controller.saveSettings();
@@ -157,7 +186,10 @@ describe('Popup', () => {
         expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
           type: 'SAVE_SETTINGS',
           data: {
-            apiKey: 'new-api-key',
+            provider: 'anthropic',
+            apiKey: 'new-anthropic-key',
+            openaiApiKey: 'new-openai-key',
+            googleApiKey: 'new-google-key',
             commentLimit: 20,
           },
         });
@@ -166,9 +198,12 @@ describe('Popup', () => {
       it('shows success message after saving', async () => {
         mockRuntime.sendMessage.mockResolvedValue({ success: true });
 
-        const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
+        const providerSelect = document.getElementById('provider-select') as HTMLSelectElement;
+        const anthropicKeyInput = document.getElementById('anthropic-key-input') as HTMLInputElement;
         const commentLimitInput = document.getElementById('comment-limit-input') as HTMLInputElement;
-        apiKeyInput.value = 'key';
+        
+        providerSelect.value = 'anthropic';
+        anthropicKeyInput.value = 'key';
         commentLimitInput.value = '10';
 
         await controller.saveSettings();
@@ -273,7 +308,23 @@ describe('Popup', () => {
   describe('Popup HTML', () => {
     it('includes privacy note in settings view', () => {
       const html = readFileSync('popup.html', 'utf-8');
-      expect(html).toContain("Tweet content is sent to Anthropic's API");
+      expect(html).toContain("Note: Tweet content is sent to");
+      expect(html).toContain("the selected provider's API for translation");
+    });
+
+    it('includes provider selector', () => {
+      const html = readFileSync('popup.html', 'utf-8');
+      expect(html).toContain('provider-select');
+      expect(html).toContain('anthropic');
+      expect(html).toContain('openai');
+      expect(html).toContain('google');
+    });
+
+    it('includes API key inputs for all providers', () => {
+      const html = readFileSync('popup.html', 'utf-8');
+      expect(html).toContain('anthropic-key-input');
+      expect(html).toContain('openai-key-input');
+      expect(html).toContain('google-key-input');
     });
   });
 });

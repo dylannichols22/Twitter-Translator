@@ -1,11 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../translator', () => ({
+const mockProvider = {
   translateQuickStreaming: vi.fn(),
   getBreakdown: vi.fn(),
+};
+
+vi.mock('../translator', () => ({
+  getProvider: vi.fn(() => mockProvider),
+  getProviderApiKey: vi.fn((settings) => {
+    // Properly implement multi-provider API key selection
+    if (!settings) return '';
+    switch (settings.provider) {
+      case 'anthropic':
+        return settings.apiKey ?? '';
+      case 'openai':
+        return settings.openaiApiKey ?? '';
+      case 'google':
+        return settings.googleApiKey ?? '';
+      default:
+        return settings.apiKey ?? '';
+    }
+  }),
 }));
 
-import { translateQuickStreaming, getBreakdown } from '../translator';
+// getProvider and getProviderApiKey are mocked, not imported for use
 import {
   renderTweet,
   renderSegmentTable,
@@ -13,7 +31,7 @@ import {
   TranslateViewController,
   groupSegmentsForTables,
 } from './translate';
-import type { TranslatedTweet, Segment } from '../translator';
+import type { TranslatedTweet, Segment, QuickStreamCallbacks } from '../translator';
 import type { Tweet } from '../scraper';
 
 // Mock browser APIs
@@ -419,7 +437,7 @@ describe('Translation View', () => {
       });
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_SETTINGS') return { apiKey: '' };
+        if (message.type === 'GET_SETTINGS') return { provider: 'anthropic', apiKey: '', openaiApiKey: '', googleApiKey: '' };
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
         return null;
       });
@@ -427,9 +445,45 @@ describe('Translation View', () => {
       const controller = new TranslateViewController();
       await controller.translate();
 
-      expect(translateQuickStreaming).not.toHaveBeenCalled();
+      expect(mockProvider.translateQuickStreaming).not.toHaveBeenCalled();
       const error = document.getElementById('error-message');
       expect(error?.textContent).toContain('API key');
+    });
+
+    it('translates with OpenAI when anthropic key is cleared but openai key is set', async () => {
+      const tweetData = {
+        tweets: [{ id: '1', text: '你好', author: 'Test', timestamp: '', isMainPost: true }],
+        url: 'https://twitter.com/user/status/1',
+      };
+
+      Object.defineProperty(window, 'location', {
+        value: { search: `?data=${encodeURIComponent(JSON.stringify(tweetData))}` },
+        writable: true,
+        configurable: true,
+      });
+
+      // Simulate user switching to OpenAI and clearing anthropic key
+      mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
+        if (message.type === 'GET_SETTINGS') {
+          return { 
+            provider: 'openai', 
+            apiKey: '', // Cleared anthropic key
+            openaiApiKey: 'sk-openai-key', // OpenAI key entered
+            googleApiKey: '',
+            commentLimit: 10 
+          };
+        }
+        if (message.type === 'GET_CACHED_TRANSLATION') return null;
+        return null;
+      });
+
+      const controller = new TranslateViewController();
+      await controller.translate();
+
+      // Should call translation API with OpenAI, not show error
+      expect(mockProvider.translateQuickStreaming).toHaveBeenCalled();
+      const error = document.getElementById('error-message');
+      expect(error?.textContent).toBe('');
     });
 
     it('renders cached translation without calling API', async () => {
@@ -452,7 +506,7 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 10 };
+        if (message.type === 'GET_SETTINGS') return { provider: 'anthropic', apiKey: 'key', openaiApiKey: '', googleApiKey: '', commentLimit: 10 };
         if (message.type === 'GET_CACHED_TRANSLATION') return cachedResult;
         return null;
       });
@@ -460,7 +514,7 @@ describe('Translation View', () => {
       const controller = new TranslateViewController();
       await controller.translate();
 
-      expect(translateQuickStreaming).not.toHaveBeenCalled();
+      expect(mockProvider.translateQuickStreaming).not.toHaveBeenCalled();
       const tweetsContainer = document.getElementById('tweets-container');
       expect(tweetsContainer?.textContent).toContain('Hello');
     });
@@ -490,7 +544,7 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_SETTINGS') return { apiKey: '' };
+        if (message.type === 'GET_SETTINGS') return { provider: 'anthropic', apiKey: '', openaiApiKey: '', googleApiKey: '' };
         if (message.type === 'GET_CACHED_TRANSLATION') return cachedResult;
         return null;
       });
@@ -501,7 +555,7 @@ describe('Translation View', () => {
       const header = document.querySelector('.tweet-header');
       header?.dispatchEvent(new Event('click'));
 
-      expect(getBreakdown).not.toHaveBeenCalled();
+      expect(mockProvider.getBreakdown).not.toHaveBeenCalled();
     });
 
     it('records usage and caches translation on success', async () => {
@@ -524,13 +578,13 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 10 };
+        if (message.type === 'GET_SETTINGS') return { provider: 'anthropic', apiKey: 'key', openaiApiKey: '', googleApiKey: '', commentLimit: 10 };
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
         return { success: true };
       });
 
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (_tweets, _apiKey, callbacks) => {
+      vi.mocked(mockProvider.translateQuickStreaming).mockImplementation(
+        async (_tweets: Tweet[], _apiKey: string, callbacks: QuickStreamCallbacks) => {
           callbacks.onTranslation(result.translations[0]);
           await callbacks.onComplete(result.usage);
         }
@@ -539,7 +593,7 @@ describe('Translation View', () => {
       const controller = new TranslateViewController();
       await controller.translate();
 
-      expect(translateQuickStreaming).toHaveBeenCalled();
+      expect(mockProvider.translateQuickStreaming).toHaveBeenCalled();
       expect(mockRuntime.sendMessage).toHaveBeenCalledWith({
         type: 'RECORD_USAGE',
         data: { inputTokens: 10, outputTokens: 20 },
@@ -572,13 +626,13 @@ describe('Translation View', () => {
       };
 
       mockRuntime.sendMessage.mockImplementation(async (message: { type: string }) => {
-        if (message.type === 'GET_SETTINGS') return { apiKey: 'key', commentLimit: 10 };
+        if (message.type === 'GET_SETTINGS') return { provider: 'anthropic', apiKey: 'key', openaiApiKey: '', googleApiKey: '', commentLimit: 10 };
         if (message.type === 'GET_CACHED_TRANSLATION') return null;
         return { success: true };
       });
 
-      vi.mocked(translateQuickStreaming).mockImplementation(
-        async (_tweets, _apiKey, callbacks) => {
+      vi.mocked(mockProvider.translateQuickStreaming).mockImplementation(
+        async (_tweets: Tweet[], _apiKey: string, callbacks: QuickStreamCallbacks) => {
           callbacks.onTranslation(result.translations[0]);
           callbacks.onComplete(result.usage);
         }

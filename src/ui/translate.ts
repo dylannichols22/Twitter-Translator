@@ -1,6 +1,6 @@
 import { MESSAGE_TYPES } from '../messages';
-import { translateQuickStreaming, getBreakdown } from '../translator';
-import type { QuickTranslation, Breakdown, UsageStats, TranslatedTweet } from '../translator';
+import { getProvider, getProviderApiKey, type Provider } from '../translator';
+import type { QuickTranslation, Breakdown, UsageStats, TranslatedTweet, QuickStreamCallbacks } from '../translator/providers/types';
 import type { Tweet } from '../scraper';
 import { estimateCost, calculateCost } from '../cost';
 import { formatCost } from '../popup/popup';
@@ -182,6 +182,7 @@ export class TranslateViewController {
   private tweets: Tweet[] = [];
   private sourceUrl = '';
   private apiKey = '';
+  private provider: Provider = 'anthropic';
   private totalUsage: UsageStats = { inputTokens: 0, outputTokens: 0 };
   private translatedIds: Set<string> = new Set();
   private knownTweetIds: Set<string> = new Set();
@@ -412,7 +413,8 @@ export class TranslateViewController {
 
         try {
           const opTweet = this.tweets[0];
-          const result = await getBreakdown(tweet.text, this.apiKey, {
+          const translationProvider = getProvider(this.provider);
+          const result = await translationProvider.getBreakdown(tweet.text, this.apiKey, {
             opAuthor: opTweet?.author,
             opText: opTweet?.text,
             opUrl: opTweet?.url,
@@ -485,7 +487,8 @@ export class TranslateViewController {
       type: MESSAGE_TYPES.GET_SETTINGS,
     });
 
-    this.apiKey = settings?.apiKey ?? '';
+    this.provider = settings?.provider ?? 'anthropic';
+    this.apiKey = getProviderApiKey(settings) ?? '';
     this.commentLimit = typeof settings?.commentLimit === 'number' ? settings.commentLimit : undefined;
 
     const cached = await browser.runtime.sendMessage({
@@ -545,8 +548,9 @@ export class TranslateViewController {
     this.cachedTranslations = [];
     this.translationBuffer.clear();
 
-    await translateQuickStreaming(this.tweets, this.apiKey, {
-      onTranslation: (translation) => {
+    const translationProvider = getProvider(this.provider);
+    const callbacks: QuickStreamCallbacks = {
+      onTranslation: (translation: QuickTranslation) => {
         const tweet = this.tweets.find((t) => t.id === translation.id);
         if (tweet && this.tweetsContainer) {
           this.renderTranslationInOrder(tweet, translation);
@@ -563,7 +567,7 @@ export class TranslateViewController {
         // Hide loading after first result
         this.showLoading(false);
       },
-      onComplete: async (usage) => {
+      onComplete: async (usage: UsageStats) => {
         this.showLoading(false);
         this.totalUsage = usage;
         this.updateCostDisplay();
@@ -592,11 +596,12 @@ export class TranslateViewController {
           },
         });
       },
-      onError: (error) => {
+      onError: (error: Error) => {
         this.showLoading(false);
         this.showError(error.message);
       },
-    });
+    };
+    await translationProvider.translateQuickStreaming(this.tweets, this.apiKey, callbacks);
   }
 
   private setThreadData(tweets: Tweet[], url: string): void {
@@ -629,8 +634,9 @@ export class TranslateViewController {
 
     this.showLoading(true);
 
-    await translateQuickStreaming(newTweets, this.apiKey, {
-      onTranslation: (translation) => {
+    const translationProvider = getProvider(this.provider);
+    const callbacks: QuickStreamCallbacks = {
+      onTranslation: (translation: QuickTranslation) => {
         const tweet = newTweets.find((t) => t.id === translation.id);
         if (tweet) {
           this.renderTranslationInOrder(tweet, translation);
@@ -646,7 +652,7 @@ export class TranslateViewController {
         this.cachedTranslationById.set(translation.id, cachedTranslation);
         this.showLoading(false);
       },
-      onComplete: async (usage) => {
+      onComplete: async (usage: UsageStats) => {
         this.showLoading(false);
         this.totalUsage.inputTokens += usage.inputTokens;
         this.totalUsage.outputTokens += usage.outputTokens;
@@ -675,11 +681,12 @@ export class TranslateViewController {
           },
         });
       },
-      onError: (error) => {
+      onError: (error: Error) => {
         this.showLoading(false);
         this.showError(error.message);
       },
-    });
+    };
+    await translationProvider.translateQuickStreaming(newTweets, this.apiKey, callbacks);
   }
 
   // Reply-thread navigation intentionally removed for now to avoid janky UX.

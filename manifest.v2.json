@@ -16,7 +16,8 @@
     "https://*.weibo.com/*",
     "https://weibo.cn/*",
     "https://*.weibo.cn/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*"
   ],
   "icons": {
     "48": "assets/icons/tt-icon-48.png",

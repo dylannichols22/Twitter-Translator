@@ -79,20 +79,10 @@ describe('PanelIntegration Weibo Sync', () => {
     // Scrape using panelIntegration's getMainColumnTweetIds
     // Note: Create integration AFTER setting up URL and DOM
     const integration = new PanelIntegration();
-    
-    // Debug: Check platform detection
-    const platform = (integration as unknown as { platform: { name: string } }).platform;
-    console.log('Detected platform:', platform.name);
-    
+
     const mainColumnIds = (integration as unknown as {
       getMainColumnTweetIds: () => Set<string>;
     }).getMainColumnTweetIds();
-
-    // Debug output
-    console.log('Scraper found:', scraperResult.tweets.length, 'tweets');
-    console.log('PanelIntegration found:', mainColumnIds.size, 'IDs');
-    console.log('Scraper IDs:', scraperResult.tweets.map(t => t.id));
-    console.log('Panel IDs:', Array.from(mainColumnIds));
 
     // Both should find the same number of entries
     expect(mainColumnIds.size).toBe(scraperResult.tweets.length);
